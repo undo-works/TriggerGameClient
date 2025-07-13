@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CHARACTER_STATUS, TRIGGER_STATUS } from "../../constants/status";
+import { useWebSocket, type ActionData } from "../../contexts/WebSocketContext";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -990,7 +991,56 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         if (remainingPoints === 0) {
           this.showActionCompletedText(this.selectedCharacter);
         }
+
+        // 全キャラクターの行動力をチェック
+        this.checkAllCharactersActionPointsCompleted();
       }
+    }
+
+    /**
+     * 全キャラクターの行動力が0になったかチェック
+     */
+    private checkAllCharactersActionPointsCompleted() {
+      let allCompleted = true;
+      let totalRemainingPoints = 0;
+
+      // プレイヤーキャラクターの行動力をチェック
+      for (const character of this.playerCharacters) {
+        const actionPoints = this.characterActionPoints.get(character) || 0;
+        totalRemainingPoints += actionPoints;
+        if (actionPoints > 0) {
+          allCompleted = false;
+        }
+      }
+
+      console.log(`残り行動力合計: ${totalRemainingPoints}`);
+
+      if (allCompleted && this.playerCharacters.length > 0) {
+        console.log(
+          "全キャラクターの行動が完了しました！行動履歴を送信します..."
+        );
+        this.sendActionHistoryToServer();
+      }
+    }
+
+    /**
+     * 行動履歴をサーバーに送信する
+     */
+    private sendActionHistoryToServer() {
+      // 全キャラクターの行動履歴を取得
+      const allActionData = this.getActionHistory();
+
+      console.log("送信する行動履歴:", allActionData);
+
+      // React側にイベントを送信（WebSocket経由でサーバーに送信）
+      allActionsCompletedEmitter.dispatchEvent(
+        new CustomEvent("allActionsCompleted", {
+          detail: {
+            actionHistory: allActionData,
+            timestamp: new Date().toISOString(),
+          },
+        })
+      );
     }
 
     /**
@@ -1165,6 +1215,77 @@ const GameGrid = () => {
   const [selectedCharacterActionPoints, setSelectedCharacterActionPoints] =
     useState<number>(0);
 
+  // WebSocketコンテキストを使用
+  const {
+    readyState,
+    sendMessage,
+    addMessageListener,
+    removeMessageListener,
+    playerId,
+    matchId,
+    setMatchId: setContextMatchId,
+    connect,
+  } = useWebSocket();
+
+  // WebSocket接続とマッチIDの初期化
+  useEffect(() => {
+    // マッチIDを取得（URLパラメータから）
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentMatchId =
+      urlParams.get("matchId") || window.location.pathname.split("/").pop();
+    if (currentMatchId && currentMatchId !== "game") {
+      setContextMatchId(currentMatchId);
+    }
+
+    // 接続していない場合は接続を開始
+    if (readyState !== WebSocket.OPEN) {
+      connect();
+    }
+  }, [readyState, connect, setContextMatchId]);
+
+  // 全行動完了イベントを監視してWebSocketで送信
+  useEffect(() => {
+    const handleAllActionsCompleted = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { actionHistory, timestamp } = customEvent.detail;
+
+      if (readyState === WebSocket.OPEN && playerId && matchId) {
+        const messageData = {
+          type: "submit_actions" as const,
+          actionHistory: actionHistory,
+          timestamp: timestamp,
+        };
+
+        console.log("WebSocketでサーバーに行動履歴を送信:", messageData);
+        sendMessage(messageData);
+
+        // UI に送信完了を表示
+        console.log("✅ 行動履歴の送信が完了しました！");
+      } else {
+        console.error(
+          "WebSocket接続がないか、プレイヤーID/マッチIDが不足しています:",
+          {
+            readyState,
+            playerId,
+            matchId,
+          }
+        );
+      }
+    };
+
+    allActionsCompletedEmitter.addEventListener(
+      "allActionsCompleted",
+      handleAllActionsCompleted
+    );
+
+    return () => {
+      allActionsCompletedEmitter.removeEventListener(
+        "allActionsCompleted",
+        handleAllActionsCompleted
+      );
+    };
+  }, [readyState, playerId, matchId, sendMessage]);
+
   useEffect(() => {
     // キャラクター選択の変更を監視
     const handleCharacterSelection = (event: Event) => {
@@ -1184,7 +1305,7 @@ const GameGrid = () => {
         handleCharacterSelection
       );
     };
-  }, []);
+  }, [selectedCharacterId]);
 
   useEffect(() => {
     // DOM要素が存在しない場合は何もしない
@@ -1279,6 +1400,9 @@ const characterSelectionEmitter = new EventTarget();
 
 // 行動力の変更をReact側に通知するためのイベントエミッター
 const actionPointsEmitter = new EventTarget();
+
+// 行動力チェック用のイベントエミッター
+const allActionsCompletedEmitter = new EventTarget();
 
 // 履歴を追加する関数
 function addToGlobalHistory(history: ActionHistory) {
