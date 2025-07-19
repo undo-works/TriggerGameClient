@@ -5,22 +5,22 @@ export const CHARACTER_STATUS = {
   character01: {
     main: "ASTEROID",
     sub: "RAYGUST",
-    activeCount: 13
+    activeCount: 3
   },
   character02: {
     main: "SCOPEON",
     sub: "SHIELD",
-    activeCount: 20,
+    activeCount: 3,
   },
   character03: {
     main: "IBIS",
     sub: "BAGWORM",
-    activeCount: 12
+    activeCount: 3
   },
   character04: {
     main: "KOGETSU",
     sub: "SHIELD",
-    activeCount: 16
+    activeCount: 3
   }
 };
 

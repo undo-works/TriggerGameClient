@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@remix-run/react";
 import { CHARACTER_STATUS, TRIGGER_STATUS } from "../../constants/status";
-import { useWebSocket, type ActionData } from "../../contexts/WebSocketContext";
+import {
+  useWebSocket,
+  type ActionData,
+  type WebSocketMessage,
+} from "../../contexts/WebSocketContext";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -67,6 +72,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       timestamp: string;
     }[] = [];
 
+    // ユニット行動モード関連
+    private isActionMode: boolean = false;
+    private actionAnimationInProgress: boolean = false;
+
     /**
      * Phaserのpreload段階で呼ばれる
      * アセット（画像、音声など）の読み込みを行う
@@ -113,8 +122,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @returns {x, y} ピクセル座標
      */
     private getHexPosition(col: number, row: number): { x: number; y: number } {
-      const offsetX = 30; // 左側の余白
-      const offsetY = 200; // 上側の余白
+      const offsetX = 0; // 左側の余白
+      const offsetY = 0; // 上側の余白
 
       const x = col * this.hexWidth * 0.75 + this.hexRadius + offsetX;
       const y =
@@ -126,17 +135,22 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     }
 
     /**
-     * ピクセル座標から六角形グリッド座標に変換する
+     * ピクセル座標から六角形グリッド座標に変換する（カメラのズーム・スクロール対応）
      * @param x ピクセルX座標
      * @param y ピクセルY座標
      * @returns {col, row} グリッド座標
      */
     private pixelToHex(x: number, y: number): { col: number; row: number } {
-      const offsetX = 30; // 左側の余白
-      const offsetY = 200; // 上側の余白
+      const offsetX = 0; // 左側の余白
+      const offsetY = 0; // 上側の余白
 
-      const adjustedX = x - offsetX - this.hexRadius;
-      const adjustedY = y - offsetY - this.hexRadius;
+      // カメラのズームとスクロールを考慮した座標変換
+      const camera = this.cameras.main;
+      const worldX = (x + camera.scrollX) / camera.zoom;
+      const worldY = (y + camera.scrollY) / camera.zoom;
+
+      const adjustedX = worldX - offsetX - this.hexRadius;
+      const adjustedY = worldY - offsetY - this.hexRadius;
 
       const col = Math.round(adjustedX / (this.hexWidth * 0.75));
       const offsetYForCol = col % 2 === 1 ? this.hexHeight / 2 : 0;
@@ -286,11 +300,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     }
 
     /**
-     * マウス位置から角度を計算する
-     * @param centerX 中心X座標
-     * @param centerY 中心Y座標
-     * @param mouseX マウスX座標
-     * @param mouseY マウスY座標
+     * マウス位置から角度を計算する（カメラのズーム・スクロール対応）
+     * @param centerX 中心X座標（世界座標）
+     * @param centerY 中心Y座標（世界座標）
+     * @param mouseX マウスX座標（スクリーン座標）
+     * @param mouseY マウスY座標（スクリーン座標）
      * @returns 角度（度数）
      */
     private calculateMouseAngle(
@@ -299,11 +313,107 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       mouseX: number,
       mouseY: number
     ): number {
-      const dx = mouseX - centerX;
-      const dy = mouseY - centerY;
+      // カメラのズームとスクロールを考慮したマウス座標変換
+      const camera = this.cameras.main;
+      const worldMouseX = (mouseX + camera.scrollX) / camera.zoom;
+      const worldMouseY = (mouseY + camera.scrollY) / camera.zoom;
+
+      const dx = worldMouseX - centerX;
+      const dy = worldMouseY - centerY;
       let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
       if (angle < 0) angle += 360;
       return angle;
+    }
+
+    /**
+     * カメラの設定（スクロールと拡大縮小）
+     */
+    private setupCamera() {
+      // カメラの境界を設定（グリッド全体をカバー）
+      const worldWidth = this.gridWidth * this.hexWidth * 0.75 + this.hexWidth;
+      const worldHeight = this.gridHeight * this.hexHeight + this.hexHeight;
+
+      // カメラの境界を設定
+      this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+
+      // 初期位置を中央に設定
+      this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
+
+      // 三段階のズームレベル
+      const zoomLevels = [0.5, 1.0, 2.0]; // 縮小、普通、拡大
+      let currentZoomIndex = 1; // 初期値は普通（1.0）
+
+      // マウスホイールで三段階ズーム
+      this.input.on(
+        "wheel",
+        (
+          pointer: Phaser.Input.Pointer,
+          gameObjects: Phaser.GameObjects.GameObject[],
+          deltaX: number,
+          deltaY: number
+        ) => {
+          const camera = this.cameras.main;
+
+          if (deltaY > 0) {
+            // ズームアウト（縮小方向）
+            if (currentZoomIndex > 0) {
+              currentZoomIndex--;
+            }
+          } else {
+            // ズームイン（拡大方向）
+            if (currentZoomIndex < zoomLevels.length - 1) {
+              currentZoomIndex++;
+            }
+          }
+
+          const newZoom = zoomLevels[currentZoomIndex];
+          camera.setZoom(newZoom);
+
+          // ズームレベルをReact側に通知
+          zoomChangeEmitter.dispatchEvent(
+            new CustomEvent("zoomChanged", {
+              detail: { zoomLevel: currentZoomIndex, zoom: newZoom },
+            })
+          );
+        }
+      );
+
+      // WASDキーでカメラ移動
+      const cursors = this.input.keyboard?.createCursorKeys();
+      if (cursors && this.input.keyboard) {
+        this.input.keyboard.on("keydown-W", () => {
+          this.cameras.main.scrollY -= 50;
+        });
+
+        this.input.keyboard.on("keydown-S", () => {
+          this.cameras.main.scrollY += 50;
+        });
+
+        this.input.keyboard.on("keydown-A", () => {
+          this.cameras.main.scrollX -= 50;
+        });
+
+        this.input.keyboard.on("keydown-D", () => {
+          this.cameras.main.scrollX += 50;
+        });
+
+        // 矢印キーでも移動可能
+        this.input.keyboard.on("keydown-UP", () => {
+          this.cameras.main.scrollY -= 50;
+        });
+
+        this.input.keyboard.on("keydown-DOWN", () => {
+          this.cameras.main.scrollY += 50;
+        });
+
+        this.input.keyboard.on("keydown-LEFT", () => {
+          this.cameras.main.scrollX -= 50;
+        });
+
+        this.input.keyboard.on("keydown-RIGHT", () => {
+          this.cameras.main.scrollX += 50;
+        });
+      }
     }
 
     /**
@@ -311,11 +421,29 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * ゲームオブジェクトの初期化を行う
      */
     create() {
+      this.setupCamera(); // カメラの設定を最初に行う
       this.createBackgroundTiles(); // 背景タイルを配置
       this.createGrid(); // グリッドラインを描画
       this.createCharacters(); // キャラクターを配置
       this.createMouseInteraction(); // マウスイベントを設定
       this.createKeyboardInteraction(); // キーボードイベントを設定
+      this.setupActionModeListeners(); // 行動モードのイベントリスナーを設定
+    }
+
+    /**
+     * 行動モードのイベントリスナーを設定
+     */
+    private setupActionModeListeners() {
+      const handleExecuteActions = (event: Event) => {
+        const customEvent = event as CustomEvent;
+        const { playerActions, enemyActions, turnNumber } = customEvent.detail;
+        this.executeAllActions(playerActions, enemyActions, turnNumber);
+      };
+
+      executeActionsEmitter.addEventListener(
+        "executeAllActions",
+        handleExecuteActions
+      );
     }
 
     /**
@@ -361,8 +489,29 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * マウスイベントを設定する（六角形グリッド対応）
      */
     private createMouseInteraction() {
+      // カメラドラッグ用の変数
+      let isDraggingCamera = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let cameraStartX = 0;
+      let cameraStartY = 0;
+
       // マウス移動イベント
       this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+        // カメラドラッグ中の処理
+        if (isDraggingCamera) {
+          const deltaX = pointer.x - dragStartX;
+          const deltaY = pointer.y - dragStartY;
+          this.cameras.main.scrollX = cameraStartX - deltaX;
+          this.cameras.main.scrollY = cameraStartY - deltaY;
+          return;
+        }
+
+        // 行動モード中は操作を無効化
+        if (this.isActionMode || this.actionAnimationInProgress) {
+          return;
+        }
+
         // トリガー扇形をドラッグ中の場合
         if (
           this.isDraggingTrigger &&
@@ -384,8 +533,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           return;
         }
 
-        // 通常のホバー処理
-        if (!this.triggerSettingMode) {
+        // 通常のホバー処理（左クリック操作でない場合はスキップ）
+        if (
+          !this.triggerSettingMode &&
+          !pointer.rightButtonDown() &&
+          !pointer.middleButtonDown()
+        ) {
           const hexCoord = this.pixelToHex(pointer.x, pointer.y);
           if (
             hexCoord.col >= 0 &&
@@ -404,6 +557,21 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // マウスクリックイベント
       this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        // 右クリックまたは中クリックの場合はカメラドラッグ開始
+        if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
+          isDraggingCamera = true;
+          dragStartX = pointer.x;
+          dragStartY = pointer.y;
+          cameraStartX = this.cameras.main.scrollX;
+          cameraStartY = this.cameras.main.scrollY;
+          return;
+        }
+
+        // 行動モード中は操作を無効化
+        if (this.isActionMode || this.actionAnimationInProgress) {
+          console.log("行動実行中のため操作できません");
+          return;
+        }
         // トリガー設定モードの場合
         if (
           this.triggerSettingMode &&
@@ -477,6 +645,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // マウス離上イベント
       this.input.on("pointerup", () => {
+        // カメラドラッグ終了
+        if (isDraggingCamera) {
+          isDraggingCamera = false;
+          return;
+        }
+
         if (this.isDraggingTrigger && this.triggerSettingMode) {
           this.isDraggingTrigger = false;
           this.completeTriggerSetting(this.currentTriggerAngle);
@@ -1191,6 +1365,156 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       console.log("  C: 行動履歴をクリア");
     }
 
+    /**
+     * 全ユニットの行動を実行する
+     * @param playerActions プレイヤーの行動履歴
+     * @param enemyActions 敵の行動履歴
+     * @param turnNumber ターン番号
+     */
+    private executeAllActions(
+      playerActions: ActionData[],
+      enemyActions: ActionData[],
+      turnNumber: number
+    ) {
+      console.log(`ターン ${turnNumber} の行動実行開始`);
+      this.isActionMode = true;
+      this.actionAnimationInProgress = true;
+
+      // 現在の自分の行動履歴を取得
+      const currentPlayerActions = this.getActionHistory();
+
+      // プレイヤーキャラクターを新しい位置に移動
+      currentPlayerActions.forEach((action) => {
+        const character = this.findCharacterById(action.characterId);
+        if (character) {
+          this.animateCharacterToPosition(character, action.position);
+          // 方向も更新
+          this.characterDirections.set(character, {
+            main: action.mainAzimuth,
+            sub: action.subAzimuth,
+          });
+        }
+      });
+
+      // 敵キャラクターを新しい位置に移動
+      enemyActions.forEach((action) => {
+        const character = this.findEnemyCharacterById(action.characterId);
+        if (character) {
+          this.animateCharacterToPosition(character, action.position);
+        }
+      });
+
+      // 行動完了後に設定モードに戻る
+      this.time.delayedCall(2000, () => {
+        this.completeActionPhase();
+      });
+    }
+
+    /**
+     * IDでキャラクターを検索
+     */
+    private findCharacterById(
+      characterId: string
+    ): Phaser.GameObjects.Image | null {
+      for (const character of this.playerCharacters) {
+        const id = this.characterIds.get(character);
+        if (id === characterId) {
+          return character;
+        }
+      }
+      return null;
+    }
+
+    /**
+     * IDで敵キャラクターを検索
+     */
+    private findEnemyCharacterById(
+      characterId: string
+    ): Phaser.GameObjects.Image | null {
+      // 敵キャラクターIDのマッピング（キャラクター番号-1をインデックスとして使用）
+      const characterIndex = parseInt(characterId.replace("character", "")) - 1;
+      return this.enemyCharacters[characterIndex] || null;
+    }
+
+    /**
+     * キャラクターを指定位置にアニメーション移動
+     */
+    private animateCharacterToPosition(
+      character: Phaser.GameObjects.Image,
+      targetPosition: { col: number; row: number }
+    ) {
+      const targetPixelPos = this.getHexPosition(
+        targetPosition.col,
+        targetPosition.row
+      );
+
+      // アニメーション移動
+      this.tweens.add({
+        targets: character,
+        x: targetPixelPos.x,
+        y: targetPixelPos.y,
+        duration: 1000,
+        ease: "Power2",
+      });
+
+      // 位置情報を更新
+      this.characterPositions.set(character, {
+        col: targetPosition.col,
+        row: targetPosition.row,
+      });
+    }
+
+    /**
+     * 行動フェーズを完了して設定モードに戻る
+     */
+    private completeActionPhase() {
+      console.log("行動フェーズ完了 - 設定モードに戻ります");
+      this.isActionMode = false;
+      this.actionAnimationInProgress = false;
+
+      // 全キャラクターの行動力をリセット
+      this.resetAllActionPoints();
+
+      // 行動履歴をクリア
+      this.clearActionHistory();
+
+      // React側に行動完了を通知
+      actionExecutionCompletedEmitter.dispatchEvent(
+        new CustomEvent("actionExecutionCompleted", {
+          detail: {
+            message: "行動フェーズが完了しました。新しいターンを開始します。",
+          },
+        })
+      );
+    }
+
+    /**
+     * 全キャラクターの行動力をリセット
+     */
+    private resetAllActionPoints() {
+      this.playerCharacters.forEach((character) => {
+        const characterId = this.characterIds.get(character);
+        if (characterId) {
+          const characterKey =
+            `character${characterId}` as keyof typeof CHARACTER_STATUS;
+          const characterStatus = CHARACTER_STATUS[characterKey];
+          if (characterStatus) {
+            this.characterActionPoints.set(
+              character,
+              characterStatus.activeCount
+            );
+          }
+        }
+
+        // 行動完了テキストを削除
+        const completedText = this.actionCompletedTexts.get(character);
+        if (completedText) {
+          completedText.destroy();
+          this.actionCompletedTexts.delete(character);
+        }
+      });
+    }
+
     // ...existing code...
   };
 };
@@ -1200,6 +1524,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
  * SSR（Server-Side Rendering）対応のため、動的インポートを使用
  */
 const GameGrid = () => {
+  // Remix Routerのナビゲーション
+  const navigate = useNavigate();
+
   // PhaserゲームインスタンスのRef（型安全性のため動的インポートの型を使用）
   const gameRef = useRef<import("phaser").Game | null>(null);
 
@@ -1214,6 +1541,48 @@ const GameGrid = () => {
   // 選択されたキャラクターの行動力を管理するステート
   const [selectedCharacterActionPoints, setSelectedCharacterActionPoints] =
     useState<number>(0);
+
+  // ゲームモードの状態管理
+  const [gameMode, setGameMode] = useState<"setup" | "action">("setup");
+  const [enemyActions, setEnemyActions] = useState<ActionData[]>([]);
+  const [currentTurn, setCurrentTurn] = useState<number>(1);
+
+  // ズームレベルの状態管理
+  const [zoomLevel, setZoomLevel] = useState<number>(1); // 0: 縮小, 1: 普通, 2: 拡大
+  const zoomLevels = [0.5, 1.0, 2.0];
+  const zoomLabels = ["縮小", "普通", "拡大"];
+
+  // ズームレベルを変更する関数
+  const changeZoomLevel = (newLevel: number) => {
+    if (newLevel >= 0 && newLevel < zoomLevels.length && gameRef.current) {
+      setZoomLevel(newLevel);
+      // Phaserゲームのカメラズームを変更
+      const scene = gameRef.current.scene.getScene("GridScene");
+      if (
+        scene &&
+        (scene as { cameras: { main: { setZoom: (zoom: number) => void } } })
+          .cameras
+      ) {
+        (
+          scene as { cameras: { main: { setZoom: (zoom: number) => void } } }
+        ).cameras.main.setZoom(zoomLevels[newLevel]);
+      }
+    }
+  };
+
+  // 対戦終了処理
+  const handleEndMatch = () => {
+    if (readyState === WebSocket.OPEN && playerId) {
+      const messageData = {
+        type: "cancel_matching" as const,
+        playerId: playerId,
+      };
+      console.log("対戦終了メッセージを送信:", messageData);
+      sendMessage(messageData);
+    } else {
+      console.error("WebSocket接続がないか、プレイヤーIDが不足しています");
+    }
+  };
 
   // WebSocketコンテキストを使用
   const {
@@ -1252,6 +1621,9 @@ const GameGrid = () => {
       if (readyState === WebSocket.OPEN && playerId && matchId) {
         const messageData = {
           type: "submit_actions" as const,
+          turnNumber: currentTurn,
+          playerId: playerId,
+          matchId: matchId,
           actionHistory: actionHistory,
           timestamp: timestamp,
         };
@@ -1285,6 +1657,120 @@ const GameGrid = () => {
       );
     };
   }, [readyState, playerId, matchId, sendMessage]);
+
+  // 敵側のアクションを受信してユニット行動モードに移行
+  useEffect(() => {
+    const handleEnemyActionSubmitted = (data: WebSocketMessage) => {
+      if (data.type === "enemy_action_submitted") {
+        console.log("敵側のアクションを受信:", data);
+        setEnemyActions(data.enemyActions || []);
+        setCurrentTurn(data.turnNumber || 1);
+        setGameMode("action");
+
+        // ユニット行動開始をPhaser側に通知
+        executeActionsEmitter.dispatchEvent(
+          new CustomEvent("executeAllActions", {
+            detail: {
+              playerActions: [], // プレイヤーの行動履歴はPhaser側で取得
+              enemyActions: data.enemyActions || [],
+              turnNumber: data.turnNumber || 1,
+            },
+          })
+        );
+      }
+    };
+
+    // WebSocketメッセージリスナーを追加
+    addMessageListener("enemy_action_submitted", handleEnemyActionSubmitted);
+
+    return () => {
+      removeMessageListener(
+        "enemy_action_submitted",
+        handleEnemyActionSubmitted
+      );
+    };
+  }, [addMessageListener, removeMessageListener]);
+
+  // 対戦終了関連のWebSocketメッセージ処理
+  useEffect(() => {
+    const handleCancelMatchingResult = (data: WebSocketMessage) => {
+      if (data.type === "cancel_matching_result") {
+        console.log("対戦終了結果を受信:", data);
+        if (data.status === "success") {
+          console.log("対戦が正常に終了されました。ホーム画面に戻ります。");
+          navigate("/", { replace: true });
+        }
+      }
+    };
+
+    const handleOpponentCancelledMatch = (data: WebSocketMessage) => {
+      if (data.type === "opponent_cancelled_match") {
+        console.log("相手が対戦を終了しました:", data);
+        alert(
+          data.message || "相手が対戦を終了しました。ホーム画面に戻ります。"
+        );
+        navigate("/", { replace: true });
+      }
+    };
+
+    // WebSocketメッセージリスナーを追加
+    addMessageListener("cancel_matching_result", handleCancelMatchingResult);
+    addMessageListener(
+      "opponent_cancelled_match",
+      handleOpponentCancelledMatch
+    );
+
+    return () => {
+      removeMessageListener(
+        "cancel_matching_result",
+        handleCancelMatchingResult
+      );
+      removeMessageListener(
+        "opponent_cancelled_match",
+        handleOpponentCancelledMatch
+      );
+    };
+  }, [addMessageListener, removeMessageListener, navigate]);
+
+  // ズーム変更の監視
+  useEffect(() => {
+    const handleZoomChange = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { zoomLevel: newZoomLevel } = customEvent.detail;
+      setZoomLevel(newZoomLevel);
+    };
+
+    zoomChangeEmitter.addEventListener("zoomChanged", handleZoomChange);
+    return () => {
+      zoomChangeEmitter.removeEventListener("zoomChanged", handleZoomChange);
+    };
+  }, []);
+
+  // 行動実行完了の処理
+  useEffect(() => {
+    const handleActionExecutionCompleted = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log("行動実行完了:", customEvent.detail.message);
+
+      // 設定モードに戻る
+      setGameMode("setup");
+      setCurrentTurn((prev) => prev + 1);
+
+      console.log("新しいターンを開始します - ターン", currentTurn + 1);
+    };
+
+    actionExecutionCompletedEmitter.addEventListener(
+      "actionExecutionCompleted",
+      handleActionExecutionCompleted
+    );
+
+    return () => {
+      actionExecutionCompletedEmitter.removeEventListener(
+        "actionExecutionCompleted",
+        handleActionExecutionCompleted
+      );
+    };
+  }, [currentTurn]);
 
   useEffect(() => {
     // キャラクター選択の変更を監視
@@ -1326,11 +1812,11 @@ const GameGrid = () => {
         // GridSceneクラスを作成（Phaserオブジェクトを渡す）
         const GridScene = createGridScene(Phaser);
 
-        // Phaserゲームの設定（六角形グリッドに適したサイズ）
+        // Phaserゲームの設定（画面サイズに合わせて調整）
         const config: Phaser.Types.Core.GameConfig = {
           type: Phaser.AUTO, // 自動的にWebGLまたはCanvasを選択
-          width: 1360, // ゲーム画面の幅（六角形グリッドに合わせて調整）
-          height: 1644, // ゲーム画面の高さ（六角形グリッドに合わせて調整）
+          width: Math.min(1200, window.innerWidth - 40), // 画面幅に合わせて調整（余白を考慮）
+          height: Math.min(800, window.innerHeight - 40), // 画面高さに合わせて調整（余白を考慮）
           backgroundColor: "#ffffff", // 背景色（真っ白）
           parent: containerRef.current, // ゲームを表示するDOM要素
           scene: GridScene, // 使用するシーン
@@ -1366,9 +1852,73 @@ const GameGrid = () => {
   }, []); // 空の依存配列で初回のみ実行
 
   return (
-    <div className="game-container relative">
+    <div className="game-container relative w-full h-screen overflow-hidden">
+      {/* ズームコントロール */}
+      <div className="absolute top-2 left-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50">
+        <h4 className="font-bold mb-2 text-center">ズームレベル</h4>
+        <div className="flex space-x-2">
+          {zoomLabels.map((label, index) => (
+            <button
+              key={index}
+              onClick={() => changeZoomLevel(index)}
+              className={`px-2 py-1 rounded text-xs ${
+                zoomLevel === index
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-600 text-gray-300 hover:bg-gray-500"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-gray-300 mt-1 text-center">
+          現在: {zoomLevels[zoomLevel]}x
+        </div>
+      </div>
+
+      {/* ゲームモード表示 */}
+      <div className="absolute top-2 right-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50">
+        <div className="text-center">
+          <h3 className="font-bold mb-2">
+            {gameMode === "setup" ? "動きの設定モード" : "ユニットの行動モード"}
+          </h3>
+          <p className="text-xs text-gray-300">ターン {currentTurn}</p>
+          {enemyActions.length > 0 && gameMode === "action" && (
+            <p className="text-xs text-yellow-300 mt-1">
+              敵のアクション受信済み ({enemyActions.length}件)
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* 操作説明 */}
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-xs z-50 max-w-xs">
+        <h4 className="font-bold mb-2">操作方法</h4>
+        <div className="space-y-1">
+          <div>• 左クリック: キャラクター選択・移動</div>
+          <div>• 右クリック + ドラッグ: 画面移動</div>
+          <div>• マウスホイール: 3段階ズーム切り替え</div>
+          <div>• ズームボタン: 縮小・普通・拡大 選択</div>
+          <div>• WASD または 矢印キー: カメラ移動</div>
+        </div>
+      </div>
+
+      {/* 対戦終了ボタン */}
+      <div className="absolute bottom-2 right-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50">
+        <button
+          onClick={handleEndMatch}
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-bold transition-colors"
+        >
+          対戦終了
+        </button>
+      </div>
+
       {/* Phaserゲームが表示されるコンテナ */}
-      <div ref={containerRef} className="border border-gray-300 rounded-lg" />
+      <div
+        ref={containerRef}
+        className="w-full h-full border border-gray-300 rounded-lg overflow-hidden"
+        style={{ maxWidth: "100vw", maxHeight: "100vh" }}
+      />
 
       {/* 行動履歴表示 */}
       <ActionHistoryDisplay
@@ -1403,6 +1953,15 @@ const actionPointsEmitter = new EventTarget();
 
 // 行動力チェック用のイベントエミッター
 const allActionsCompletedEmitter = new EventTarget();
+
+// 全ユニット行動実行用のイベントエミッター
+const executeActionsEmitter = new EventTarget();
+
+// 行動完了通知用のイベントエミッター
+const actionExecutionCompletedEmitter = new EventTarget();
+
+// ズーム変更通知用のイベントエミッター
+const zoomChangeEmitter = new EventTarget();
 
 // 履歴を追加する関数
 function addToGlobalHistory(history: ActionHistory) {
@@ -1502,7 +2061,7 @@ const ActionHistoryDisplay: React.FC<{
   if (!selectedCharacterId || (!visible && histories.length === 0)) return null;
 
   return (
-    <div className="fixed top-4 left-4 bg-black bg-opacity-60 text-white p-3 rounded-lg shadow-lg text-sm z-50 max-w-sm">
+    <div className="fixed top-2 left-60 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50 max-w-sm">
       <h3 className="font-bold mb-2 text-center">
         行動履歴 - {selectedCharacterId}
       </h3>

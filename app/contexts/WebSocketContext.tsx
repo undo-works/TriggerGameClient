@@ -20,7 +20,10 @@ export interface WebSocketMessage {
     | "matchmaking"
     | "matchmaking_result"
     | "cancel_matching"
+    | "cancel_matching_result"
+    | "opponent_cancelled_match"
     | "submit_actions"
+    | "enemy_action_submitted"
     | "turn_result"
     | "game_state_update"
     | "match_waiting"
@@ -30,6 +33,10 @@ export interface WebSocketMessage {
   playerId?: string;
   matchId?: string;
   actionHistory?: ActionData[];
+  enemyActions?: ActionData[];
+  enemyPlayerId?: string;
+  opponentPlayerId?: string; // opponent_cancelled_match用
+  turnNumber?: number;
   timestamp?: string;
   result?: Record<string, unknown>;
   gameState?: Record<string, unknown>;
