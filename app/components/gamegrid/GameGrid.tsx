@@ -16,12 +16,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     // グリッドの設定
     private gridSize: number = 32; // 1マスのサイズ（ピクセル）
     private gridWidth: number = 36; // グリッドの幅（マス数）
-    private gridHeight: number = 36; // グリッドの高さ（マス数）
+    private gridHeight: number = 37; // グリッドの高さ（マス数）
 
     // 六角形グリッドの設定
     private hexRadius: number = 24; // 六角形の半径
     private hexWidth: number = this.hexRadius * 2; // 六角形の幅
     private hexHeight: number = this.hexRadius * Math.sqrt(3); // 六角形の高さ
+
+    // グリッドの余白設定
+    private marginLeft: number = 0; // 左側の余白
+    private marginTop: number = 0; // 上側の余白
 
     // Phaserオブジェクト
     private hoveredCell: { x: number; y: number } | null = null; // マウスでホバーしているセル
@@ -116,21 +120,50 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     }
 
     /**
+     * 余白を初期化する（画面サイズの半分程度）
+     */
+    private initializeMargins() {
+      // ゲームのキャンバスサイズを取得
+      const gameWidth = this.cameras.main.width;
+      const gameHeight = this.cameras.main.height;
+
+      // 画面の横幅/縦幅の半分程度の余白を設定
+      this.marginLeft = gameWidth * 0.5;
+      this.marginTop = gameHeight * 0.5;
+    }
+
+    /**
+     * 敵のアクション用に座標を逆転させる
+     * @param position 元の座標
+     * @returns 逆転された座標
+     */
+    private invertPosition(position: { col: number; row: number }): {
+      col: number;
+      row: number;
+    } {
+      // グリッドの最大サイズを取得
+      const maxCol = this.gridWidth - 1;
+      const maxRow = this.gridHeight - 1;
+
+      return {
+        col: maxCol - position.col,
+        row: maxRow - position.row,
+      };
+    }
+
+    /**
      * 六角形グリッドの座標を計算する
      * @param col 列インデックス
      * @param row 行インデックス
      * @returns {x, y} ピクセル座標
      */
     private getHexPosition(col: number, row: number): { x: number; y: number } {
-      const offsetX = 0; // 左側の余白
-      const offsetY = 0; // 上側の余白
-
-      const x = col * this.hexWidth * 0.75 + this.hexRadius + offsetX;
+      const x = col * this.hexWidth * 0.75 + this.hexRadius + this.marginLeft;
       const y =
         row * this.hexHeight +
         (col % 2 === 1 ? this.hexHeight / 2 : 0) +
         this.hexRadius +
-        offsetY;
+        this.marginTop;
       return { x, y };
     }
 
@@ -141,16 +174,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @returns {col, row} グリッド座標
      */
     private pixelToHex(x: number, y: number): { col: number; row: number } {
-      const offsetX = 0; // 左側の余白
-      const offsetY = 0; // 上側の余白
-
       // カメラのズームとスクロールを考慮した座標変換
       const camera = this.cameras.main;
       const worldX = (x + camera.scrollX) / camera.zoom;
       const worldY = (y + camera.scrollY) / camera.zoom;
 
-      const adjustedX = worldX - offsetX - this.hexRadius;
-      const adjustedY = worldY - offsetY - this.hexRadius;
+      const adjustedX = worldX - this.marginLeft - this.hexRadius;
+      const adjustedY = worldY - this.marginTop - this.hexRadius;
 
       const col = Math.round(adjustedX / (this.hexWidth * 0.75));
       const offsetYForCol = col % 2 === 1 ? this.hexHeight / 2 : 0;
@@ -329,14 +359,18 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * カメラの設定（スクロールと拡大縮小）
      */
     private setupCamera() {
-      // カメラの境界を設定（グリッド全体をカバー）
-      const worldWidth = this.gridWidth * this.hexWidth * 0.75 + this.hexWidth;
-      const worldHeight = this.gridHeight * this.hexHeight + this.hexHeight;
+      // カメラの境界を設定（グリッド全体をカバー + 余白）
+      const gridWidth = this.gridWidth * this.hexWidth * 0.75 + this.hexWidth;
+      const gridHeight = this.gridHeight * this.hexHeight + this.hexHeight;
+
+      // 余白を含めたワールドサイズ
+      const worldWidth = gridWidth + this.marginLeft * 2;
+      const worldHeight = gridHeight + this.marginTop * 2;
 
       // カメラの境界を設定
       this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
 
-      // 初期位置を中央に設定
+      // 初期位置を中央に設定（余白を考慮）
       this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
 
       // 三段階のズームレベル
@@ -421,6 +455,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * ゲームオブジェクトの初期化を行う
      */
     create() {
+      this.initializeMargins(); // 余白を初期化
       this.setupCamera(); // カメラの設定を最初に行う
       this.createBackgroundTiles(); // 背景タイルを配置
       this.createGrid(); // グリッドラインを描画
@@ -855,10 +890,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private createCharacters() {
       // 自分のキャラクター（底辺行）を配置
       const playerPositions = [
-        { col: 2, row: 23 }, // 左から3番目
-        { col: 8, row: 23 }, // 左から5番目
-        { col: 16, row: 23 }, // 左から7番目
-        { col: 22, row: 23 }, // 左から9番目
+        { col: 4, row: 34 },
+        { col: 12, row: 34 },
+        { col: 20, row: 34 },
+        { col: 28, row: 34 },
       ];
 
       const playerCharacterKeys = [
@@ -909,15 +944,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // 相手のキャラクター（上辺行）を配置
       const enemyPositions = [
-        { col: 2, row: 1 }, // 左から3番目
-        { col: 8, row: 1 }, // 左から5番目
-        { col: 16, row: 1 }, // 左から7番目
-        { col: 22, row: 1 }, // 左から9番目
+        { col: 4, row: 34 },
+        { col: 12, row: 34 },
+        { col: 20, row: 34 },
+        { col: 28, row: 34 },
       ];
 
-      // 相手のキャラクターを配置（同じ画像を使用）
+      // 相手のキャラクターを配置（逆転した座標を使用）
       enemyPositions.forEach((pos, index) => {
-        const position = this.getHexPosition(pos.col, pos.row);
+        const invertedPos = this.invertPosition(pos);
+        const position = this.getHexPosition(invertedPos.col, invertedPos.row);
         const character = this.add.image(
           position.x,
           position.y,
@@ -934,8 +970,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         character.setFlipY(true);
 
         this.enemyCharacters.push(character);
-        // キャラクターの位置情報を記録
-        this.characterPositions.set(character, { col: pos.col, row: pos.row });
+        // キャラクターの位置情報を記録（逆転した座標を保存）
+        this.characterPositions.set(character, {
+          col: invertedPos.col,
+          row: invertedPos.row,
+        });
       });
     }
 
@@ -1125,6 +1164,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.clearSelection();
 
       console.log("トリガー設定が完了しました");
+
+      // 行動履歴記録後に全キャラクターの行動力をチェック
+      this.checkAllCharactersActionPointsCompleted();
     }
 
     /**
@@ -1166,8 +1208,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           this.showActionCompletedText(this.selectedCharacter);
         }
 
-        // 全キャラクターの行動力をチェック
-        this.checkAllCharactersActionPointsCompleted();
+        // 注意: 全キャラクターのチェックはfinishTriggerSetting()で行う
       }
     }
 
@@ -1383,31 +1424,106 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 現在の自分の行動履歴を取得
       const currentPlayerActions = this.getActionHistory();
 
-      // プレイヤーキャラクターを新しい位置に移動
+      // 移動するキャラクターの数をカウント（移動完了の判定用）
+      let totalMovingCharacters = 0;
+      let completedMovements = 0;
+
+      const checkAllMovementsComplete = () => {
+        completedMovements++;
+        if (completedMovements >= totalMovingCharacters) {
+          // すべての移動が完了したら設定モードに戻る
+          this.time.delayedCall(500, () => {
+            this.completeActionPhase();
+          });
+        }
+      };
+
+      // プレイヤーキャラクターをアクション配列に従って移動
+      // キャラクターIDごとにアクションをグループ化
+      const playerActionGroups: { [characterId: string]: ActionData[] } = {};
       currentPlayerActions.forEach((action) => {
-        const character = this.findCharacterById(action.characterId);
-        if (character) {
-          this.animateCharacterToPosition(character, action.position);
-          // 方向も更新
+        if (!playerActionGroups[action.characterId]) {
+          playerActionGroups[action.characterId] = [];
+        }
+        playerActionGroups[action.characterId].push(action);
+      });
+
+      // タイムスタンプでソート（古い順）
+      Object.keys(playerActionGroups).forEach((characterId) => {
+        playerActionGroups[characterId].sort(
+          (a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+      });
+
+      // 各プレイヤーキャラクターをアクション配列に従って移動
+      Object.keys(playerActionGroups).forEach((characterId) => {
+        const character = this.findCharacterById(characterId);
+        const actions = playerActionGroups[characterId];
+
+        if (character && actions.length > 0) {
+          totalMovingCharacters++;
+          this.animatePlayerCharacterByActionSequence(
+            character,
+            actions,
+            checkAllMovementsComplete
+          );
+
+          // 最後のアクションの方向を設定
+          const lastAction = actions[actions.length - 1];
           this.characterDirections.set(character, {
-            main: action.mainAzimuth,
-            sub: action.subAzimuth,
+            main: lastAction.mainAzimuth,
+            sub: lastAction.subAzimuth,
           });
         }
       });
 
-      // 敵キャラクターを新しい位置に移動
+      // 敵キャラクターをアクション配列に従って移動
+      // キャラクターIDごとにアクションをグループ化
+      const enemyActionGroups: { [characterId: string]: ActionData[] } = {};
       enemyActions.forEach((action) => {
-        const character = this.findEnemyCharacterById(action.characterId);
-        if (character) {
-          this.animateCharacterToPosition(character, action.position);
+        if (!enemyActionGroups[action.characterId]) {
+          enemyActionGroups[action.characterId] = [];
+        }
+        enemyActionGroups[action.characterId].push(action);
+      });
+
+      // タイムスタンプでソート（古い順）
+      Object.keys(enemyActionGroups).forEach((characterId) => {
+        enemyActionGroups[characterId].sort(
+          (a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+      });
+
+      // 各敵キャラクターをアクション配列に従って移動
+      Object.keys(enemyActionGroups).forEach((characterId) => {
+        const character = this.findEnemyCharacterById(characterId);
+        const actions = enemyActionGroups[characterId];
+
+        if (character && actions.length > 0) {
+          totalMovingCharacters++;
+          this.animateCharacterByActionSequence(
+            character,
+            actions,
+            checkAllMovementsComplete
+          );
+
+          // 最後のアクションの方向を設定
+          const lastAction = actions[actions.length - 1];
+          this.characterDirections.set(character, {
+            main: lastAction.mainAzimuth,
+            sub: lastAction.subAzimuth,
+          });
         }
       });
 
-      // 行動完了後に設定モードに戻る
-      this.time.delayedCall(2000, () => {
-        this.completeActionPhase();
-      });
+      // 移動するキャラクターがいない場合は即座に完了
+      if (totalMovingCharacters === 0) {
+        this.time.delayedCall(500, () => {
+          this.completeActionPhase();
+        });
+      }
     }
 
     /**
@@ -1437,31 +1553,240 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     }
 
     /**
-     * キャラクターを指定位置にアニメーション移動
+     * 六角形グリッドでの隣接セルを取得
+     * @param col 列
+     * @param row 行
+     * @returns 隣接セルの配列
      */
-    private animateCharacterToPosition(
-      character: Phaser.GameObjects.Image,
-      targetPosition: { col: number; row: number }
-    ) {
-      const targetPixelPos = this.getHexPosition(
-        targetPosition.col,
-        targetPosition.row
+    private getHexNeighbors(col: number, row: number): { col: number; row: number }[] {
+      const neighbors: { col: number; row: number }[] = [];
+      
+      // 偶数列と奇数列で隣接パターンが異なる
+      if (col % 2 === 0) {
+        // 偶数列の場合
+        neighbors.push(
+          { col: col - 1, row: row - 1 }, // 左上
+          { col: col - 1, row: row },     // 左
+          { col: col, row: row - 1 },     // 上
+          { col: col, row: row + 1 },     // 下
+          { col: col + 1, row: row - 1 }, // 右上
+          { col: col + 1, row: row }      // 右
+        );
+      } else {
+        // 奇数列の場合
+        neighbors.push(
+          { col: col - 1, row: row },     // 左
+          { col: col - 1, row: row + 1 }, // 左下
+          { col: col, row: row - 1 },     // 上
+          { col: col, row: row + 1 },     // 下
+          { col: col + 1, row: row },     // 右
+          { col: col + 1, row: row + 1 }  // 右下
+        );
+      }
+      
+      // グリッド境界内のセルのみ返す
+      return neighbors.filter(neighbor => 
+        neighbor.col >= 0 && neighbor.col < this.gridWidth &&
+        neighbor.row >= 0 && neighbor.row < this.gridHeight
       );
+    }
 
-      // アニメーション移動
-      this.tweens.add({
-        targets: character,
-        x: targetPixelPos.x,
-        y: targetPixelPos.y,
-        duration: 1000,
-        ease: "Power2",
-      });
+    /**
+     * 行動履歴から移動経路を計算する（六角形グリッド用）
+     * @param startPosition 開始位置
+     * @param endPosition 終了位置
+     * @returns 移動経路の配列（1マスずつの中間位置を含む）
+     */
+    private calculateMovementPath(
+      startPosition: { col: number; row: number },
+      endPosition: { col: number; row: number }
+    ): { col: number; row: number }[] {
+      const path: { col: number; row: number }[] = [];
+      let currentCol = startPosition.col;
+      let currentRow = startPosition.row;
 
-      // 位置情報を更新
-      this.characterPositions.set(character, {
-        col: targetPosition.col,
-        row: targetPosition.row,
-      });
+      // 六角形グリッドの最短経路計算
+      while (currentCol !== endPosition.col || currentRow !== endPosition.row) {
+        const neighbors = this.getHexNeighbors(currentCol, currentRow);
+        
+        // 目標に最も近い隣接セルを選択
+        let bestNeighbor = neighbors[0];
+        let bestDistance = Infinity;
+        
+        for (const neighbor of neighbors) {
+          // マンハッタン距離で近似
+          const distance = Math.abs(neighbor.col - endPosition.col) + Math.abs(neighbor.row - endPosition.row);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestNeighbor = neighbor;
+          }
+        }
+        
+        if (!bestNeighbor) {
+          console.warn("移動可能な隣接セルが見つかりません");
+          break;
+        }
+        
+        currentCol = bestNeighbor.col;
+        currentRow = bestNeighbor.row;
+        path.push({ col: currentCol, row: currentRow });
+
+        // 無限ループ防止（最大移動数制限）
+        if (path.length > 50) {
+          console.warn("移動経路計算で無限ループが検出されました");
+          break;
+        }
+      }
+
+      return path;
+    }
+
+    /**
+     * アクション配列に従ってプレイヤーキャラクターを段階的に移動
+     * @param character 移動するキャラクター
+     * @param actions そのキャラクターのアクション配列
+     * @param onComplete 完了時のコールバック
+     */
+    private animatePlayerCharacterByActionSequence(
+      character: Phaser.GameObjects.Image,
+      actions: ActionData[],
+      onComplete?: () => void
+    ) {
+      if (actions.length === 0) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      let currentActionIndex = 0;
+
+      const moveToNextAction = () => {
+        if (currentActionIndex >= actions.length) {
+          if (onComplete) onComplete();
+          return;
+        }
+
+        const action = actions[currentActionIndex];
+        const targetPosition = action.position; // プレイヤーは座標逆転不要
+        const targetPixelPos = this.getHexPosition(targetPosition.col, targetPosition.row);
+
+        // 1秒で次の位置に移動
+        this.tweens.add({
+          targets: character,
+          x: targetPixelPos.x,
+          y: targetPixelPos.y,
+          duration: 1000, // 1秒
+          ease: "Power2",
+          onComplete: () => {
+            // 位置情報を更新
+            this.characterPositions.set(character, targetPosition);
+            currentActionIndex++;
+            moveToNextAction(); // 次のアクションへ
+          }
+        });
+      };
+
+      moveToNextAction();
+    }
+
+    /**
+     * アクション配列に従ってキャラクターを段階的に移動
+     * @param character 移動するキャラクター
+     * @param actions そのキャラクターのアクション配列
+     * @param onComplete 完了時のコールバック
+     */
+    private animateCharacterByActionSequence(
+      character: Phaser.GameObjects.Image,
+      actions: ActionData[],
+      onComplete?: () => void
+    ) {
+      if (actions.length === 0) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      let currentActionIndex = 0;
+
+      const moveToNextAction = () => {
+        if (currentActionIndex >= actions.length) {
+          if (onComplete) onComplete();
+          return;
+        }
+
+        const action = actions[currentActionIndex];
+        const targetPosition = this.invertPosition(action.position); // 敵の座標を逆転
+        const targetPixelPos = this.getHexPosition(targetPosition.col, targetPosition.row);
+
+        // 1秒で次の位置に移動
+        this.tweens.add({
+          targets: character,
+          x: targetPixelPos.x,
+          y: targetPixelPos.y,
+          duration: 1000, // 1秒
+          ease: "Power2",
+          onComplete: () => {
+            // 位置情報を更新
+            this.characterPositions.set(character, targetPosition);
+            currentActionIndex++;
+            moveToNextAction(); // 次のアクションへ
+          }
+        });
+      };
+
+      moveToNextAction();
+    }
+
+    /**
+     * キャラクターを段階的にアニメーション移動（1マスずつ1秒）
+     */
+    private animateCharacterStepByStep(
+      character: Phaser.GameObjects.Image,
+      targetPosition: { col: number; row: number },
+      onComplete?: () => void
+    ) {
+      const startPosition = this.characterPositions.get(character);
+      if (!startPosition) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      const movementPath = this.calculateMovementPath(startPosition, targetPosition);
+      
+      // 移動経路がない場合（すでに目標位置にいる場合）
+      if (movementPath.length === 0) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      let currentStepIndex = 0;
+
+      const moveToNextStep = () => {
+        if (currentStepIndex >= movementPath.length) {
+          // 最終位置情報を更新
+          this.characterPositions.set(character, targetPosition);
+          if (onComplete) onComplete();
+          return;
+        }
+
+        const nextPosition = movementPath[currentStepIndex];
+        const targetPixelPos = this.getHexPosition(nextPosition.col, nextPosition.row);
+
+        // 1マスを1秒で移動
+        this.tweens.add({
+          targets: character,
+          x: targetPixelPos.x,
+          y: targetPixelPos.y,
+          duration: 1000, // 1秒
+          ease: "Power2",
+          onComplete: () => {
+            // 中間位置情報を更新
+            this.characterPositions.set(character, nextPosition);
+            currentStepIndex++;
+            moveToNextStep(); // 次のステップへ
+          }
+        });
+      };
+
+      moveToNextStep();
     }
 
     /**
@@ -1656,7 +1981,7 @@ const GameGrid = () => {
         handleAllActionsCompleted
       );
     };
-  }, [readyState, playerId, matchId, sendMessage]);
+  }, [readyState, playerId, matchId, sendMessage, currentTurn]);
 
   // 敵側のアクションを受信してユニット行動モードに移行
   useEffect(() => {
