@@ -6,6 +6,9 @@ import {
   type ActionData,
   type WebSocketMessage,
 } from "../../contexts/WebSocketContext";
+import { CombatSystem } from "./combatSystem";
+import { HexUtils } from "./hexUtils";
+import type { CombatResult } from "./types";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -79,6 +82,18 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     // ユニット行動モード関連
     private isActionMode: boolean = false;
     private actionAnimationInProgress: boolean = false;
+
+    // 戦闘システム
+    private combatSystem!: CombatSystem;
+
+    // トリガー表示管理
+    private triggerDisplays: Map<
+      Phaser.GameObjects.Image,
+      {
+        mainTrigger: Phaser.GameObjects.Graphics | null;
+        subTrigger: Phaser.GameObjects.Graphics | null;
+      }
+    > = new Map();
 
     /**
      * Phaserのpreload段階で呼ばれる
@@ -165,6 +180,30 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         this.hexRadius +
         this.marginTop;
       return { x, y };
+    }
+
+    /**
+     * ピクセル座標からグリッド座標を逆算する（トリガー表示の追従用）
+     * @param pixelX ピクセルX座標
+     * @param pixelY ピクセルY座標
+     * @returns グリッド座標 | null（計算不可の場合）
+     */
+    private getGridPositionFromPixel(
+      pixelX: number,
+      pixelY: number
+    ): { col: number; row: number } | null {
+      // マージンを除去
+      const adjustedX = pixelX - this.marginLeft - this.hexRadius;
+      const adjustedY = pixelY - this.marginTop - this.hexRadius;
+
+      // 概算の列を計算
+      const col = Math.round(adjustedX / (this.hexWidth * 0.75));
+
+      // 列に応じた行オフセットを計算
+      const rowOffset = col % 2 === 1 ? this.hexHeight / 2 : 0;
+      const row = Math.round((adjustedY - rowOffset) / this.hexHeight);
+
+      return { col, row };
     }
 
     /**
@@ -460,6 +499,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.createBackgroundTiles(); // 背景タイルを配置
       this.createGrid(); // グリッドラインを描画
       this.createCharacters(); // キャラクターを配置
+      this.initializeCombatSystem(); // 戦闘システムを初期化
       this.createMouseInteraction(); // マウスイベントを設定
       this.createKeyboardInteraction(); // キーボードイベントを設定
       this.setupActionModeListeners(); // 行動モードのイベントリスナーを設定
@@ -705,6 +745,23 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         return;
       }
 
+      // 既に別のキャラクターが選択されている場合の確認
+      if (this.selectedCharacter && this.selectedCharacter !== character) {
+        const currentActionPoints =
+          this.characterActionPoints.get(this.selectedCharacter) || 0;
+        if (currentActionPoints > 0) {
+          const currentCharacterId =
+            this.characterIds.get(this.selectedCharacter) || "不明";
+          const newCharacterId = this.characterIds.get(character) || "不明";
+          console.log(
+            `警告: キャラクター${currentCharacterId}の行動が残っています（残り${currentActionPoints}回）。`
+          );
+          console.log(
+            `キャラクター${newCharacterId}に切り替えますか？ 前のキャラクターの設定は保持されます。`
+          );
+        }
+      }
+
       // 既に選択されているキャラクターをリセット
       this.clearSelection();
 
@@ -733,6 +790,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private showMovableHexes() {
       if (!this.selectedCharacterPosition || !this.selectedCharacter) return;
+
+      // 前回の移動可能マスを削除
+      this.movableHexes.forEach((hex) => hex.destroy());
+      this.movableHexes = [];
 
       // 行動力をチェック
       const actionPoints =
@@ -814,7 +875,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.movableHexes = [];
 
       // トリガー表示をクリア
-      this.clearTriggerDisplay();
+      this.clearAllTriggerDisplays();
 
       // トリガー設定モードをリセット
       this.triggerSettingMode = false;
@@ -859,6 +920,382 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 移動後にトリガー設定モードに入る
       this.startTriggerSetting();
     }
+
+    /**
+     * キャラクターのトリガー方向を表示する（ユニット行動モード専用）
+     */
+    private showTriggerDirections(character: Phaser.GameObjects.Image) {
+      // 行動モード中のみ表示
+      if (!this.isActionMode) return;
+
+      // キャラクターが削除されている場合は何もしない
+      if (!character || character.scene === null) return;
+
+      // キャラクターがマップに存在しない場合は何もしない
+      if (!this.characterPositions.has(character)) return;
+
+      // 既存のトリガー表示をクリア
+      this.clearTriggerDisplayForCharacter(character);
+
+      const position = this.characterPositions.get(character);
+      const directions = this.characterDirections.get(character);
+      const characterId = this.characterIds.get(character);
+
+      if (!position || !directions || !characterId) return;
+
+      // キャラクターのステータスを取得
+      const characterKey =
+        `character${characterId}` as keyof typeof CHARACTER_STATUS;
+      const characterStatus = CHARACTER_STATUS[characterKey];
+      if (!characterStatus) return;
+
+      const centerPos = this.getHexPosition(position.col, position.row);
+
+      // メイントリガーのステータスを取得
+      const mainTriggerKey =
+        characterStatus.main as keyof typeof TRIGGER_STATUS;
+      const mainTriggerStatus = TRIGGER_STATUS[mainTriggerKey];
+
+      // サブトリガーのステータスを取得
+      const subTriggerKey = characterStatus.sub as keyof typeof TRIGGER_STATUS;
+      const subTriggerStatus = TRIGGER_STATUS[subTriggerKey];
+
+      // 敵キャラクターかどうかを判定
+      const isEnemyCharacter = this.enemyCharacters.includes(character);
+
+      // 敵の場合は角度に180度を加算
+      const mainDirection = isEnemyCharacter
+        ? directions.main + 180
+        : directions.main;
+      const subDirection = isEnemyCharacter
+        ? directions.sub + 180
+        : directions.sub;
+
+      // メイントリガーを表示（赤系クリアカラー、実際のangleとrangeを使用）
+      const mainTrigger = this.createTriggerDisplay(
+        centerPos.x,
+        centerPos.y,
+        mainDirection,
+        0xff4444, // 赤系
+        0.3,
+        mainTriggerStatus.angle,
+        mainTriggerStatus.range
+      );
+
+      // サブトリガーを表示（青系クリアカラー、実際のangleとrangeを使用）
+      const subTrigger = this.createTriggerDisplay(
+        centerPos.x,
+        centerPos.y,
+        subDirection,
+        0x4444ff, // 青系
+        0.2,
+        subTriggerStatus.angle,
+        subTriggerStatus.range
+      );
+
+      // ラベルを追加（実際のトリガー射程に基づいて位置を計算、敵の場合は180度補正）
+      const mainLabel = this.add.text(
+        centerPos.x +
+          Math.cos(((mainDirection - 90) * Math.PI) / 180) *
+            this.hexRadius *
+            mainTriggerStatus.range *
+            2,
+        centerPos.y +
+          Math.sin(((mainDirection - 90) * Math.PI) / 180) *
+            this.hexRadius *
+            mainTriggerStatus.range *
+            2,
+        "Main",
+        {
+          fontSize: "10px",
+          color: "#ff4444",
+          backgroundColor: "#ffffff",
+          padding: { x: 2, y: 1 },
+        }
+      );
+      mainLabel.setOrigin(0.5);
+      mainLabel.setDepth(3);
+
+      const subLabel = this.add.text(
+        centerPos.x +
+          Math.cos(((subDirection - 90) * Math.PI) / 180) *
+            this.hexRadius *
+            subTriggerStatus.range *
+            2,
+        centerPos.y +
+          Math.sin(((subDirection - 90) * Math.PI) / 180) *
+            this.hexRadius *
+            subTriggerStatus.range *
+            2,
+        "Sub",
+        {
+          fontSize: "10px",
+          color: "#4444ff",
+          backgroundColor: "#ffffff",
+          padding: { x: 2, y: 1 },
+        }
+      );
+      subLabel.setOrigin(0.5);
+      subLabel.setDepth(3);
+
+      // トリガー表示を保存（ラベルも含める）
+      this.triggerDisplays.set(character, {
+        mainTrigger,
+        subTrigger,
+      });
+
+      // ラベル用の保存領域を追加
+      mainTrigger.setData("label", mainLabel);
+      subTrigger.setData("label", subLabel);
+    }
+
+    /**
+     * キャラクターの現在位置に基づいてトリガー表示を更新（アニメーション追従用）
+     */
+    private updateTriggerPositionsForCharacter(
+      character: Phaser.GameObjects.Image
+    ) {
+      if (!this.isActionMode) return;
+
+      // キャラクターが削除されている場合は何もしない
+      if (!character || character.scene === null) return;
+
+      // キャラクターがマップに存在しない場合は何もしない
+      if (!this.characterPositions.has(character)) return;
+
+      const directions = this.characterDirections.get(character);
+      const characterId = this.characterIds.get(character);
+      if (!directions || !characterId) return;
+
+      // キャラクターのステータスを取得
+      const characterKey =
+        `character${characterId}` as keyof typeof CHARACTER_STATUS;
+      const characterStatus = CHARACTER_STATUS[characterKey];
+      if (!characterStatus) return;
+
+      // メイントリガーのステータスを取得
+      const mainTriggerKey =
+        characterStatus.main as keyof typeof TRIGGER_STATUS;
+      const mainTriggerStatus = TRIGGER_STATUS[mainTriggerKey];
+
+      // サブトリガーのステータスを取得
+      const subTriggerKey = characterStatus.sub as keyof typeof TRIGGER_STATUS;
+      const subTriggerStatus = TRIGGER_STATUS[subTriggerKey];
+
+      // 敵キャラクターかどうかを判定
+      const isEnemyCharacter = this.enemyCharacters.includes(character);
+
+      // 敵の場合は角度に180度を加算
+      const mainDirection = isEnemyCharacter
+        ? directions.main + 180
+        : directions.main;
+      const subDirection = isEnemyCharacter
+        ? directions.sub + 180
+        : directions.sub;
+
+      const displays = this.triggerDisplays.get(character);
+      if (!displays) return;
+
+      // キャラクターの現在のピクセル位置を使用
+      const currentX = character.x;
+      const currentY = character.y;
+
+      // メイントリガーの表示を更新
+      if (displays.mainTrigger) {
+        displays.mainTrigger.clear();
+        this.drawTriggerFanShape(
+          displays.mainTrigger,
+          currentX,
+          currentY,
+          mainDirection,
+          0xff4444,
+          0.3,
+          mainTriggerStatus.angle,
+          mainTriggerStatus.range
+        );
+
+        // メインラベルの位置も更新
+        const mainLabel = displays.mainTrigger.getData(
+          "label"
+        ) as Phaser.GameObjects.Text;
+        if (mainLabel) {
+          mainLabel.setPosition(
+            currentX +
+              Math.cos(((mainDirection - 90) * Math.PI) / 180) *
+                this.hexRadius *
+                mainTriggerStatus.range *
+                2,
+            currentY +
+              Math.sin(((mainDirection - 90) * Math.PI) / 180) *
+                this.hexRadius *
+                mainTriggerStatus.range *
+                2
+          );
+        }
+      }
+
+      // サブトリガーの表示を更新
+      if (displays.subTrigger) {
+        displays.subTrigger.clear();
+        this.drawTriggerFanShape(
+          displays.subTrigger,
+          currentX,
+          currentY,
+          subDirection,
+          0x4444ff,
+          0.2,
+          subTriggerStatus.angle,
+          subTriggerStatus.range
+        );
+
+        // サブラベルの位置も更新
+        const subLabel = displays.subTrigger.getData(
+          "label"
+        ) as Phaser.GameObjects.Text;
+        if (subLabel) {
+          subLabel.setPosition(
+            currentX +
+              Math.cos(((subDirection - 90) * Math.PI) / 180) *
+                this.hexRadius *
+                subTriggerStatus.range *
+                2,
+            currentY +
+              Math.sin(((subDirection - 90) * Math.PI) / 180) *
+                this.hexRadius *
+                subTriggerStatus.range *
+                2
+          );
+        }
+      }
+    }
+
+    /**
+     * トリガー扇形の表示を作成する
+     */
+    private createTriggerDisplay(
+      centerX: number,
+      centerY: number,
+      direction: number,
+      color: number,
+      alpha: number,
+      triggerAngle: number = 60,
+      triggerRange: number = 3
+    ): Phaser.GameObjects.Graphics {
+      const triggerGraphics = this.add.graphics();
+      triggerGraphics.setDepth(1);
+
+      // 扇形の設定（トリガーの実際のangleとrangeを使用）
+      const radius = this.hexRadius * triggerRange * 2;
+      const fanAngle = triggerAngle;
+
+      // Phaserの座標系に合わせて角度を補正（-90度）
+      const correctedDirection = direction - 90;
+
+      // 開始角度と終了角度を計算（度数を使用）
+      const startAngle = (correctedDirection - fanAngle / 2) * (Math.PI / 180);
+      const endAngle = (correctedDirection + fanAngle / 2) * (Math.PI / 180);
+
+      // 扇形を描画
+      triggerGraphics.fillStyle(color, alpha);
+      triggerGraphics.lineStyle(2, color, 0.8);
+
+      triggerGraphics.beginPath();
+      triggerGraphics.moveTo(centerX, centerY);
+      triggerGraphics.arc(
+        centerX,
+        centerY,
+        radius,
+        startAngle,
+        endAngle,
+        false
+      );
+      triggerGraphics.closePath();
+      triggerGraphics.fillPath();
+      triggerGraphics.strokePath();
+
+      return triggerGraphics;
+    }
+
+    /**
+     * 既存のGraphicsオブジェクトに扇形を描画する（アニメーション追従用）
+     */
+    private drawTriggerFanShape(
+      graphics: Phaser.GameObjects.Graphics,
+      centerX: number,
+      centerY: number,
+      direction: number,
+      color: number,
+      alpha: number,
+      triggerAngle: number = 60,
+      triggerRange: number = 3
+    ) {
+      // 扇形の設定（トリガーの実際のangleとrangeを使用）
+      const radius = this.hexRadius * triggerRange * 2;
+      const fanAngle = triggerAngle;
+
+      // Phaserの座標系に合わせて角度を補正（-90度）
+      const correctedDirection = direction - 90;
+
+      // 開始角度と終了角度を計算（度数を使用）
+      const startAngle = (correctedDirection - fanAngle / 2) * (Math.PI / 180);
+      const endAngle = (correctedDirection + fanAngle / 2) * (Math.PI / 180);
+
+      // 扇形を描画
+      graphics.fillStyle(color, alpha);
+      graphics.lineStyle(2, color, 0.8);
+
+      graphics.beginPath();
+      graphics.moveTo(centerX, centerY);
+      graphics.arc(centerX, centerY, radius, startAngle, endAngle, false);
+      graphics.closePath();
+      graphics.fillPath();
+      graphics.strokePath();
+    }
+
+    /**
+     * 全てのトリガー表示をクリア
+     */
+    private clearAllTriggerDisplays() {
+      this.triggerDisplays.forEach((displays) => {
+        if (displays.mainTrigger) {
+          // ラベルも削除
+          const mainLabel = displays.mainTrigger.getData("label");
+          if (mainLabel) mainLabel.destroy();
+          displays.mainTrigger.destroy();
+        }
+        if (displays.subTrigger) {
+          // ラベルも削除
+          const subLabel = displays.subTrigger.getData("label");
+          if (subLabel) subLabel.destroy();
+          displays.subTrigger.destroy();
+        }
+      });
+      this.triggerDisplays.clear();
+    }
+
+    /**
+     * 特定のキャラクターのトリガー表示をクリア
+     */
+    private clearTriggerDisplayForCharacter(
+      character: Phaser.GameObjects.Image
+    ) {
+      const displays = this.triggerDisplays.get(character);
+      if (displays) {
+        if (displays.mainTrigger) {
+          // ラベルも削除
+          const mainLabel = displays.mainTrigger.getData("label");
+          if (mainLabel) mainLabel.destroy();
+          displays.mainTrigger.destroy();
+        }
+        if (displays.subTrigger) {
+          // ラベルも削除
+          const subLabel = displays.subTrigger.getData("label");
+          if (subLabel) subLabel.destroy();
+          displays.subTrigger.destroy();
+        }
+        this.triggerDisplays.delete(character);
+      }
+    }
     private updateCellHighlight() {
       if (!this.hoveredCell) return;
 
@@ -891,16 +1328,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 自分のキャラクター（底辺行）を配置
       const playerPositions = [
         { col: 4, row: 34 },
-        { col: 12, row: 34 },
-        { col: 20, row: 34 },
-        { col: 28, row: 34 },
+        // { col: 12, row: 34 },
+        // { col: 20, row: 34 },
+        // { col: 28, row: 34 },
       ];
 
       const playerCharacterKeys = [
         "character01",
-        "character02",
-        "character03",
-        "character04",
+        // "character02",
+        // "character03",
+        // "character04",
       ];
 
       // 自分のキャラクターを配置
@@ -927,8 +1364,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         this.characterPositions.set(character, { col: pos.col, row: pos.row });
         // キャラクターIDを記録
         this.characterIds.set(character, characterId);
-        // 初期向きを設定（主トリガー: 上向き, 副トリガー: 上向き）
-        this.characterDirections.set(character, { main: 300, sub: 300 });
+        // 初期向きを設定（味方は上向きに進軍: 0度）
+        this.characterDirections.set(character, { main: 0, sub: 0 });
 
         // 初期行動力を設定
         const characterKey =
@@ -954,6 +1391,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       enemyPositions.forEach((pos, index) => {
         const invertedPos = this.invertPosition(pos);
         const position = this.getHexPosition(invertedPos.col, invertedPos.row);
+        const characterId = String(index + 1).padStart(2, "0"); // 敵キャラクターID: "01", "02", "03", "04"
         const character = this.add.image(
           position.x,
           position.y,
@@ -970,12 +1408,359 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         character.setFlipY(true);
 
         this.enemyCharacters.push(character);
+        // キャラクターIDを記録
+        this.characterIds.set(character, characterId);
+        // 初期方向を設定（敵は下向きに進軍: 180度）
+        this.characterDirections.set(character, { main: 180, sub: 180 });
         // キャラクターの位置情報を記録（逆転した座標を保存）
         this.characterPositions.set(character, {
           col: invertedPos.col,
           row: invertedPos.row,
         });
       });
+    }
+
+    /**
+     * 戦闘システムを初期化する
+     */
+    private initializeCombatSystem() {
+      // 戦闘システムの必要な状態オブジェクトを作成
+      const config = {
+        gridSize: this.gridSize,
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        hexRadius: this.hexRadius,
+        hexWidth: this.hexWidth,
+        hexHeight: this.hexHeight,
+        marginLeft: this.marginLeft,
+        marginTop: this.marginTop,
+      };
+
+      const characterState = {
+        positions: this.characterPositions,
+        ids: this.characterIds,
+        directions: this.characterDirections,
+        actionPoints: this.characterActionPoints,
+        actionCompletedTexts: this.actionCompletedTexts,
+        combatStats: new Map(),
+        triggerStats: new Map(),
+      };
+
+      const triggerState = {
+        settingMode: this.triggerSettingMode,
+        settingType: this.triggerSettingType,
+        fan: this.triggerFan,
+        isDragging: this.isDraggingTrigger,
+        currentAngle: this.currentTriggerAngle,
+      };
+
+      // HexUtilsクラスのインスタンスを作成
+      const hexUtils = new HexUtils(config);
+
+      this.combatSystem = new CombatSystem(
+        this,
+        config,
+        hexUtils,
+        characterState,
+        triggerState,
+        this.playerCharacters
+      );
+
+      // 全キャラクターの戦闘ステータスを初期化
+      [...this.playerCharacters, ...this.enemyCharacters].forEach(
+        (character) => {
+          this.combatSystem.initializeCombatStats(character);
+        }
+      );
+    }
+
+    /**
+     * 戦闘チェックを実行し、結果を処理する
+     */
+    private executeCombatChecks() {
+      if (!this.combatSystem) {
+        console.warn("戦闘システムが初期化されていません");
+        return;
+      }
+
+      try {
+        // 戦闘システムに最新の位置情報を同期
+        this.syncCharacterStatesToCombatSystem();
+
+        // 戦闘チェックを実行
+        const combatResults = this.combatSystem.checkCombatTriggers();
+
+        if (combatResults.length > 0) {
+          console.log(`${combatResults.length}件の戦闘が発生しました`);
+
+          // 戦闘結果を処理
+          combatResults.forEach((result, index) => {
+            console.log(`戦闘${index + 1}:`, result);
+            this.processCombatResult(result);
+          });
+        } else {
+          console.log("戦闘は発生しませんでした");
+        }
+      } catch (error) {
+        console.error("戦闘チェック中にエラーが発生しました:", error);
+      }
+    }
+
+    /**
+     * 特定のキャラクターに関連する戦闘チェックを実行し、結果を処理する
+     */
+    private executeCombatChecksForCharacter(
+      character: Phaser.GameObjects.Image
+    ) {
+      if (!this.combatSystem) {
+        console.warn("戦闘システムが初期化されていません");
+        return;
+      }
+
+      try {
+        // 戦闘システムに最新の位置情報を同期
+        this.syncCharacterStatesToCombatSystem();
+
+        // 戦闘チェックを実行
+        const combatResults = this.combatSystem.checkCombatTriggers();
+
+        if (combatResults.length > 0) {
+          // 指定されたキャラクターに関連する戦闘結果のみを処理
+          const relevantResults = combatResults.filter(
+            (result) =>
+              result.attacker === character || result.defender === character
+          );
+
+          if (relevantResults.length > 0) {
+            console.log(
+              `${relevantResults.length}件の戦闘が発生しました（キャラクター関連）`
+            );
+
+            // 戦闘結果を処理
+            relevantResults.forEach((result, index) => {
+              console.log(`戦闘${index + 1}:`, result);
+              this.processCombatResult(result);
+            });
+          }
+        }
+      } catch (error) {
+        console.error("戦闘チェック中にエラーが発生しました:", error);
+      }
+    }
+
+    /**
+     * GameGridの状態を戦闘システムに同期する
+     */
+    private syncCharacterStatesToCombatSystem() {
+      if (!this.combatSystem) return;
+
+      // 位置情報を同期
+      for (const [character, position] of this.characterPositions) {
+        this.combatSystem.updateCharacterPosition(character, position);
+      }
+
+      // 方向情報を同期
+      for (const [character, directions] of this.characterDirections) {
+        this.combatSystem.updateCharacterDirections(character, directions);
+      }
+    }
+
+    /**
+     * 個別の戦闘結果を処理する
+     */
+    private processCombatResult(result: CombatResult) {
+      // 戦闘エフェクトの表示
+      if (result.isHit) {
+        const attackerId = this.characterIds.get(result.attacker) || "不明";
+        const defenderId = this.characterIds.get(result.defender) || "不明";
+
+        console.log(`${attackerId} → ${defenderId}: ${result.damage}ダメージ`);
+
+        if (result.isAvoid) {
+          console.log("攻撃が回避されました！");
+          // 回避表示
+          this.showAvoidText(result.defender);
+        } else {
+          // ダメージ表示（回避されていない場合のみ）
+          this.showDamageText(result.defender, result.damage);
+        }
+
+        if (result.isDefeat) {
+          console.log(`${defenderId}が撃破されました！`);
+          // ベイルアウト表示と撃破処理
+          this.showBailOutAndRemoveCharacter(result.defender);
+        }
+      }
+    }
+
+    /**
+     * 回避テキストを表示する
+     */
+    private showAvoidText(character: Phaser.GameObjects.Image) {
+      // キャラクターの位置を取得
+      const position = this.characterPositions.get(character);
+      if (!position) return;
+
+      const pixelPos = this.getHexPosition(position.col, position.row);
+
+      // 回避テキストを作成
+      const avoidText = this.add.text(
+        pixelPos.x,
+        pixelPos.y - this.hexRadius * 0.8,
+        "MISS",
+        {
+          fontSize: "14px",
+          color: "#00ff00",
+          fontStyle: "bold",
+          backgroundColor: "#000000",
+          padding: { x: 4, y: 2 },
+        }
+      );
+      avoidText.setOrigin(0.5);
+      avoidText.setDepth(10); // 最前面に表示
+
+      // アニメーション: 上に移動しながらフェードアウト
+      this.tweens.add({
+        targets: avoidText,
+        y: pixelPos.y - this.hexRadius * 2,
+        alpha: 0,
+        duration: 1500,
+        ease: "Power2",
+        onComplete: () => {
+          avoidText.destroy();
+        },
+      });
+    }
+
+    /**
+     * ダメージテキストを表示する
+     */
+    private showDamageText(
+      character: Phaser.GameObjects.Image,
+      damage: number
+    ) {
+      // キャラクターの位置を取得
+      const position = this.characterPositions.get(character);
+      if (!position) return;
+
+      const pixelPos = this.getHexPosition(position.col, position.row);
+
+      // ダメージテキストを作成
+      const damageText = this.add.text(
+        pixelPos.x,
+        pixelPos.y - this.hexRadius * 0.8,
+        `-${damage}`,
+        {
+          fontSize: "16px",
+          color: "#ff0000",
+          fontStyle: "bold",
+          backgroundColor: "#ffffff",
+          padding: { x: 4, y: 2 },
+        }
+      );
+      damageText.setOrigin(0.5);
+      damageText.setDepth(10); // 最前面に表示
+
+      // アニメーション: 上に移動しながらフェードアウト
+      this.tweens.add({
+        targets: damageText,
+        y: pixelPos.y - this.hexRadius * 2,
+        alpha: 0,
+        duration: 1500,
+        ease: "Power2",
+        onComplete: () => {
+          damageText.destroy();
+        },
+      });
+    }
+
+    /**
+     * ベイルアウト表示と撃破されたキャラクターの削除
+     */
+    private showBailOutAndRemoveCharacter(character: Phaser.GameObjects.Image) {
+      // キャラクターの位置を取得
+      const position = this.characterPositions.get(character);
+      if (!position) return;
+
+      const pixelPos = this.getHexPosition(position.col, position.row);
+
+      // ベイルアウトテキストを作成
+      const bailOutText = this.add.text(
+        pixelPos.x,
+        pixelPos.y - this.hexRadius * 0.8,
+        "ベイルアウト",
+        {
+          fontSize: "14px",
+          color: "#ffffff",
+          fontStyle: "bold",
+          backgroundColor: "#000000",
+          padding: { x: 6, y: 3 },
+        }
+      );
+      bailOutText.setOrigin(0.5);
+      bailOutText.setDepth(10); // 最前面に表示
+
+      // ベイルアウトテキストのアニメーション
+      this.tweens.add({
+        targets: bailOutText,
+        y: pixelPos.y - this.hexRadius * 2,
+        alpha: 0,
+        duration: 2000,
+        ease: "Power2",
+        onComplete: () => {
+          bailOutText.destroy();
+        },
+      });
+
+      // キャラクターを徐々に透明にして削除
+      this.tweens.add({
+        targets: character,
+        alpha: 0,
+        duration: 1000,
+        delay: 500, // ベイルアウトテキスト表示後少し待ってから開始
+        ease: "Power2",
+        onComplete: () => {
+          // キャラクターを完全に削除
+          this.removeCharacterCompletely(character);
+        },
+      });
+    }
+
+    /**
+     * キャラクターを完全に削除する
+     */
+    private removeCharacterCompletely(character: Phaser.GameObjects.Image) {
+      // HPバーを削除
+      const hpBar = character.getData("hpBar");
+      if (hpBar) {
+        hpBar.destroy();
+      }
+
+      // 各種マップからキャラクターを削除
+      this.characterPositions.delete(character);
+      this.characterIds.delete(character);
+      this.characterDirections.delete(character);
+      this.characterActionPoints.delete(character);
+      this.actionCompletedTexts.delete(character);
+
+      // プレイヤー/敵キャラクター配列から削除
+      const playerIndex = this.playerCharacters.indexOf(character);
+      if (playerIndex > -1) {
+        this.playerCharacters.splice(playerIndex, 1);
+      }
+
+      const enemyIndex = this.enemyCharacters.indexOf(character);
+      if (enemyIndex > -1) {
+        this.enemyCharacters.splice(enemyIndex, 1);
+      }
+
+      // トリガー表示をクリア
+      this.clearTriggerDisplayForCharacter(character);
+
+      // キャラクターオブジェクトを削除
+      character.destroy();
+
+      console.log("キャラクターが完全に削除されました");
     }
 
     /**
@@ -1161,9 +1946,30 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.triggerSettingMode = false;
       this.triggerSettingType = null;
       this.clearTriggerDisplay();
-      this.clearSelection();
 
       console.log("トリガー設定が完了しました");
+
+      // 行動力が残っているかチェック
+      const remainingActionPoints = this.selectedCharacter
+        ? this.characterActionPoints.get(this.selectedCharacter) || 0
+        : 0;
+
+      if (remainingActionPoints > 0) {
+        // 行動力が残っている場合：キャラクター選択を維持し、移動可能マスを再表示
+        console.log(
+          `行動力が${remainingActionPoints}残っています。次の行動を設定してください。`
+        );
+        this.showMovableHexes();
+
+        // React側にキャラクター選択を維持することを通知
+        const characterId =
+          this.characterIds.get(this.selectedCharacter!) || null;
+        notifyCharacterSelection(characterId, remainingActionPoints);
+      } else {
+        // 行動力が0の場合：選択をクリア
+        console.log("行動力が0になりました。キャラクター選択をクリアします。");
+        this.clearSelection();
+      }
 
       // 行動履歴記録後に全キャラクターの行動力をチェック
       this.checkAllCharactersActionPointsCompleted();
@@ -1421,6 +2227,14 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.isActionMode = true;
       this.actionAnimationInProgress = true;
 
+      // 全キャラクターのトリガー方向を表示（行動モード専用）
+      // 注意：キャラクターの移動に合わせてトリガーも更新される
+      [...this.playerCharacters, ...this.enemyCharacters].forEach(
+        (character) => {
+          this.showTriggerDirections(character);
+        }
+      );
+
       // 現在の自分の行動履歴を取得
       const currentPlayerActions = this.getActionHistory();
 
@@ -1468,13 +2282,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             actions,
             checkAllMovementsComplete
           );
-
-          // 最後のアクションの方向を設定
-          const lastAction = actions[actions.length - 1];
-          this.characterDirections.set(character, {
-            main: lastAction.mainAzimuth,
-            sub: lastAction.subAzimuth,
-          });
         }
       });
 
@@ -1508,13 +2315,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             actions,
             checkAllMovementsComplete
           );
-
-          // 最後のアクションの方向を設定
-          const lastAction = actions[actions.length - 1];
-          this.characterDirections.set(character, {
-            main: lastAction.mainAzimuth,
-            sub: lastAction.subAzimuth,
-          });
         }
       });
 
@@ -1558,36 +2358,42 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @param row 行
      * @returns 隣接セルの配列
      */
-    private getHexNeighbors(col: number, row: number): { col: number; row: number }[] {
+    private getHexNeighbors(
+      col: number,
+      row: number
+    ): { col: number; row: number }[] {
       const neighbors: { col: number; row: number }[] = [];
-      
+
       // 偶数列と奇数列で隣接パターンが異なる
       if (col % 2 === 0) {
         // 偶数列の場合
         neighbors.push(
           { col: col - 1, row: row - 1 }, // 左上
-          { col: col - 1, row: row },     // 左
-          { col: col, row: row - 1 },     // 上
-          { col: col, row: row + 1 },     // 下
+          { col: col - 1, row: row }, // 左
+          { col: col, row: row - 1 }, // 上
+          { col: col, row: row + 1 }, // 下
           { col: col + 1, row: row - 1 }, // 右上
-          { col: col + 1, row: row }      // 右
+          { col: col + 1, row: row } // 右
         );
       } else {
         // 奇数列の場合
         neighbors.push(
-          { col: col - 1, row: row },     // 左
+          { col: col - 1, row: row }, // 左
           { col: col - 1, row: row + 1 }, // 左下
-          { col: col, row: row - 1 },     // 上
-          { col: col, row: row + 1 },     // 下
-          { col: col + 1, row: row },     // 右
-          { col: col + 1, row: row + 1 }  // 右下
+          { col: col, row: row - 1 }, // 上
+          { col: col, row: row + 1 }, // 下
+          { col: col + 1, row: row }, // 右
+          { col: col + 1, row: row + 1 } // 右下
         );
       }
-      
+
       // グリッド境界内のセルのみ返す
-      return neighbors.filter(neighbor => 
-        neighbor.col >= 0 && neighbor.col < this.gridWidth &&
-        neighbor.row >= 0 && neighbor.row < this.gridHeight
+      return neighbors.filter(
+        (neighbor) =>
+          neighbor.col >= 0 &&
+          neighbor.col < this.gridWidth &&
+          neighbor.row >= 0 &&
+          neighbor.row < this.gridHeight
       );
     }
 
@@ -1608,25 +2414,27 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 六角形グリッドの最短経路計算
       while (currentCol !== endPosition.col || currentRow !== endPosition.row) {
         const neighbors = this.getHexNeighbors(currentCol, currentRow);
-        
+
         // 目標に最も近い隣接セルを選択
         let bestNeighbor = neighbors[0];
         let bestDistance = Infinity;
-        
+
         for (const neighbor of neighbors) {
           // マンハッタン距離で近似
-          const distance = Math.abs(neighbor.col - endPosition.col) + Math.abs(neighbor.row - endPosition.row);
+          const distance =
+            Math.abs(neighbor.col - endPosition.col) +
+            Math.abs(neighbor.row - endPosition.row);
           if (distance < bestDistance) {
             bestDistance = distance;
             bestNeighbor = neighbor;
           }
         }
-        
+
         if (!bestNeighbor) {
           console.warn("移動可能な隣接セルが見つかりません");
           break;
         }
-        
+
         currentCol = bestNeighbor.col;
         currentRow = bestNeighbor.row;
         path.push({ col: currentCol, row: currentRow });
@@ -1667,7 +2475,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
         const action = actions[currentActionIndex];
         const targetPosition = action.position; // プレイヤーは座標逆転不要
-        const targetPixelPos = this.getHexPosition(targetPosition.col, targetPosition.row);
+        const targetPixelPos = this.getHexPosition(
+          targetPosition.col,
+          targetPosition.row
+        );
+
+        // このアクションのトリガー方向を設定
+        this.characterDirections.set(character, {
+          main: action.mainAzimuth,
+          sub: action.subAzimuth,
+        });
 
         // 1秒で次の位置に移動
         this.tweens.add({
@@ -1676,12 +2493,27 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           y: targetPixelPos.y,
           duration: 1000, // 1秒
           ease: "Power2",
+          onUpdate: () => {
+            // キャラクターの移動中にトリガー表示もリアルタイムで追従
+            if (this.isActionMode) {
+              this.updateTriggerPositionsForCharacter(character);
+            }
+          },
           onComplete: () => {
             // 位置情報を更新
             this.characterPositions.set(character, targetPosition);
+
+            // トリガー表示を最終位置で更新（行動モード中のみ）
+            if (this.isActionMode) {
+              this.showTriggerDirections(character);
+            }
+
+            // このキャラクターに関連する戦闘チェックを実行
+            this.executeCombatChecksForCharacter(character);
+
             currentActionIndex++;
             moveToNextAction(); // 次のアクションへ
-          }
+          },
         });
       };
 
@@ -1714,7 +2546,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
         const action = actions[currentActionIndex];
         const targetPosition = this.invertPosition(action.position); // 敵の座標を逆転
-        const targetPixelPos = this.getHexPosition(targetPosition.col, targetPosition.row);
+        const targetPixelPos = this.getHexPosition(
+          targetPosition.col,
+          targetPosition.row
+        );
+
+        // このアクションのトリガー方向を設定
+        this.characterDirections.set(character, {
+          main: action.mainAzimuth,
+          sub: action.subAzimuth,
+        });
 
         // 1秒で次の位置に移動
         this.tweens.add({
@@ -1723,12 +2564,27 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           y: targetPixelPos.y,
           duration: 1000, // 1秒
           ease: "Power2",
+          onUpdate: () => {
+            // キャラクターの移動中にトリガー表示もリアルタイムで追従
+            if (this.isActionMode) {
+              this.updateTriggerPositionsForCharacter(character);
+            }
+          },
           onComplete: () => {
             // 位置情報を更新
             this.characterPositions.set(character, targetPosition);
+
+            // トリガー表示を最終位置で更新（行動モード中のみ）
+            if (this.isActionMode) {
+              this.showTriggerDirections(character);
+            }
+
+            // このキャラクターに関連する戦闘チェックを実行
+            this.executeCombatChecksForCharacter(character);
+
             currentActionIndex++;
             moveToNextAction(); // 次のアクションへ
-          }
+          },
         });
       };
 
@@ -1749,8 +2605,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         return;
       }
 
-      const movementPath = this.calculateMovementPath(startPosition, targetPosition);
-      
+      const movementPath = this.calculateMovementPath(
+        startPosition,
+        targetPosition
+      );
+
       // 移動経路がない場合（すでに目標位置にいる場合）
       if (movementPath.length === 0) {
         if (onComplete) onComplete();
@@ -1768,7 +2627,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         }
 
         const nextPosition = movementPath[currentStepIndex];
-        const targetPixelPos = this.getHexPosition(nextPosition.col, nextPosition.row);
+        const targetPixelPos = this.getHexPosition(
+          nextPosition.col,
+          nextPosition.row
+        );
 
         // 1マスを1秒で移動
         this.tweens.add({
@@ -1782,7 +2644,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             this.characterPositions.set(character, nextPosition);
             currentStepIndex++;
             moveToNextStep(); // 次のステップへ
-          }
+          },
         });
       };
 
@@ -1793,9 +2655,17 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * 行動フェーズを完了して設定モードに戻る
      */
     private completeActionPhase() {
-      console.log("行動フェーズ完了 - 設定モードに戻ります");
+      console.log("行動フェーズ完了 - 戦闘チェック開始");
+
+      // 戦闘チェックを実行
+      this.executeCombatChecks();
+
+      console.log("戦闘チェック完了 - 設定モードに戻ります");
       this.isActionMode = false;
       this.actionAnimationInProgress = false;
+
+      // 全キャラクターのトリガー表示をクリア
+      this.clearAllTriggerDisplays();
 
       // 全キャラクターの行動力をリセット
       this.resetAllActionPoints();

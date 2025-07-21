@@ -1,3 +1,6 @@
+
+const smallActive = false;
+
 /**
  * キャラクターのステータス
  */
@@ -5,22 +8,46 @@ export const CHARACTER_STATUS = {
   character01: {
     main: "ASTEROID",
     sub: "RAYGUST",
-    activeCount: 3
+    activeCount: smallActive ? 3 : 13,
+    trion: 2,
+    attack: 3,
+    defense: 4,
+    avoid: 4,
+    support: 5,
+    technique: 6,
   },
   character02: {
     main: "SCOPEON",
     sub: "SHIELD",
-    activeCount: 3,
+    activeCount: smallActive ? 3 : 16,
+    trion: 7,
+    attack: 9,
+    defense: 8,
+    avoid: 10,
+    support: 8,
+    technique: 8,
   },
   character03: {
     main: "IBIS",
     sub: "BAGWORM",
-    activeCount: 3
+    activeCount: smallActive ? 3 : 12,
+    trion: 25,
+    attack: 2,
+    defense: 4,
+    avoid: 3,
+    support: 5,
+    technique: 6,
   },
   character04: {
     main: "KOGETSU",
     sub: "SHIELD",
-    activeCount: 3
+    activeCount: smallActive ? 3 : 15,
+    trion: 18,
+    attack: 8,
+    defense: 9,
+    avoid: 7,
+    support: 8,
+    technique: 8,
   }
 };
 
@@ -28,29 +55,57 @@ export const TRIGGER_STATUS = {
   KOGETSU: {
     angle: 120,
     range: 2,
+    attack: 8,
+    avoid: 5,
+    defense: 0,
+    trionEffect: 1,
   },
   RAYGUST: {
     angle: 120,
     range: 2,
+    attack: 6,
+    avoid: 3,
+    defense: 10,
+    trionEffect: 1,
   },
   SCOPEON: {
     angle: 120,
     range: 1,
+    attack: 8,
+    avoid: 10,
+    defense: 0,
+    trionEffect: 1,
   },
   ASTEROID: {
     angle: 60,
     range: 4,
+    attack: 4,
+    avoid: 10,
+    defense: 0,
+    trionEffect: 1,
   },
   IBIS: {
     angle: 30,
     range: 10,
+    attack: 10,
+    avoid: 3,
+    defense: 0,
+    trionEffect: 1,
   },
   SHIELD: {
     angle: 120,
     range: 1,
+    attack: 0,
+    avoid: 10,
+    defense: 5,
+    trionEffect: 1,
   },
   BAGWORM: {
     angle: 60,
     range: 1,
+    attack: 0,
+    avoid: 10,
+    defense: 0,
+    trionEffect: 1,
   },
 }
