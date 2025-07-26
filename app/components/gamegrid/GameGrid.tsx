@@ -18,8 +18,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
   return class GridScene extends Phaser.Scene {
     // グリッドの設定
     private gridSize: number = 32; // 1マスのサイズ（ピクセル）
-    private gridWidth: number = 36; // グリッドの幅（マス数）
-    private gridHeight: number = 37; // グリッドの高さ（マス数）
+    // WARNING: テスト用コメントアウト
+    // private gridWidth: number = 36; // グリッドの幅（マス数）
+    // private gridHeight: number = 37; // グリッドの高さ（マス数）
+
+    private gridWidth: number = 18; // グリッドの幅（マス数）
+    private gridHeight: number = 18; // グリッドの高さ（マス数）
 
     // 六角形グリッドの設定
     private hexRadius: number = 24; // 六角形の半径
@@ -1327,14 +1331,17 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private createCharacters() {
       // 自分のキャラクター（底辺行）を配置
       const playerPositions = [
-        { col: 4, row: 34 },
+        // WARNING: テスト用コメントアウト
+        // { col: 4, row: 34 },
         // { col: 12, row: 34 },
         // { col: 20, row: 34 },
         // { col: 28, row: 34 },
+        { col: 4, row: 16 },
       ];
 
       const playerCharacterKeys = [
         "character01",
+        // WARNING: テスト用コメントアウト
         // "character02",
         // "character03",
         // "character04",
@@ -1381,10 +1388,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // 相手のキャラクター（上辺行）を配置
       const enemyPositions = [
-        { col: 4, row: 34 },
-        { col: 12, row: 34 },
-        { col: 20, row: 34 },
-        { col: 28, row: 34 },
+        // WARNING: テスト用コメントアウト
+        // { col: 4, row: 34 },
+        // { col: 12, row: 34 },
+        // { col: 20, row: 34 },
+        // { col: 28, row: 34 },
+        { col: 4, row: 16 },
       ];
 
       // 相手のキャラクターを配置（逆転した座標を使用）
@@ -1508,6 +1517,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
     /**
      * 特定のキャラクターに関連する戦闘チェックを実行し、結果を処理する
+     * @deprecated
      */
     private executeCombatChecksForCharacter(
       character: Phaser.GameObjects.Image
@@ -2238,55 +2248,26 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 現在の自分の行動履歴を取得
       const currentPlayerActions = this.getActionHistory();
 
-      // 移動するキャラクターの数をカウント（移動完了の判定用）
-      let totalMovingCharacters = 0;
-      let completedMovements = 0;
+      // ステップベースの移動システムを使用
+      this.executeStepBasedActions(currentPlayerActions, enemyActions);
+    }
 
-      const checkAllMovementsComplete = () => {
-        completedMovements++;
-        if (completedMovements >= totalMovingCharacters) {
-          // すべての移動が完了したら設定モードに戻る
-          this.time.delayedCall(500, () => {
-            this.completeActionPhase();
-          });
-        }
-      };
-
-      // プレイヤーキャラクターをアクション配列に従って移動
+    /**
+     * ステップベースで全キャラクターの行動を実行
+     */
+    private executeStepBasedActions(
+      playerActions: ActionData[],
+      enemyActions: ActionData[]
+    ) {
       // キャラクターIDごとにアクションをグループ化
       const playerActionGroups: { [characterId: string]: ActionData[] } = {};
-      currentPlayerActions.forEach((action) => {
+      playerActions.forEach((action) => {
         if (!playerActionGroups[action.characterId]) {
           playerActionGroups[action.characterId] = [];
         }
         playerActionGroups[action.characterId].push(action);
       });
 
-      // タイムスタンプでソート（古い順）
-      Object.keys(playerActionGroups).forEach((characterId) => {
-        playerActionGroups[characterId].sort(
-          (a, b) =>
-            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        );
-      });
-
-      // 各プレイヤーキャラクターをアクション配列に従って移動
-      Object.keys(playerActionGroups).forEach((characterId) => {
-        const character = this.findCharacterById(characterId);
-        const actions = playerActionGroups[characterId];
-
-        if (character && actions.length > 0) {
-          totalMovingCharacters++;
-          this.animatePlayerCharacterByActionSequence(
-            character,
-            actions,
-            checkAllMovementsComplete
-          );
-        }
-      });
-
-      // 敵キャラクターをアクション配列に従って移動
-      // キャラクターIDごとにアクションをグループ化
       const enemyActionGroups: { [characterId: string]: ActionData[] } = {};
       enemyActions.forEach((action) => {
         if (!enemyActionGroups[action.characterId]) {
@@ -2295,7 +2276,14 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         enemyActionGroups[action.characterId].push(action);
       });
 
-      // タイムスタンプでソート（古い順）
+      // タイムスタンプでソート
+      Object.keys(playerActionGroups).forEach((characterId) => {
+        playerActionGroups[characterId].sort(
+          (a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+      });
+
       Object.keys(enemyActionGroups).forEach((characterId) => {
         enemyActionGroups[characterId].sort(
           (a, b) =>
@@ -2303,27 +2291,179 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         );
       });
 
-      // 各敵キャラクターをアクション配列に従って移動
-      Object.keys(enemyActionGroups).forEach((characterId) => {
-        const character = this.findEnemyCharacterById(characterId);
-        const actions = enemyActionGroups[characterId];
-
-        if (character && actions.length > 0) {
-          totalMovingCharacters++;
-          this.animateCharacterByActionSequence(
-            character,
-            actions,
-            checkAllMovementsComplete
-          );
-        }
+      // 最大ステップ数を計算
+      let maxSteps = 0;
+      Object.values(playerActionGroups).forEach((actions) => {
+        maxSteps = Math.max(maxSteps, actions.length);
+      });
+      Object.values(enemyActionGroups).forEach((actions) => {
+        maxSteps = Math.max(maxSteps, actions.length);
       });
 
-      // 移動するキャラクターがいない場合は即座に完了
-      if (totalMovingCharacters === 0) {
+      console.log(`最大ステップ数: ${maxSteps}`);
+
+      // 行動モード開始時にHPゲージを表示
+      this.combatSystem.showAllHpDisplays();
+
+      if (maxSteps === 0) {
+        // アクションがない場合は即座に完了
         this.time.delayedCall(500, () => {
           this.completeActionPhase();
         });
+        return;
       }
+
+      // ステップごとに実行
+      this.executeActionStep(
+        0,
+        maxSteps,
+        playerActionGroups,
+        enemyActionGroups
+      );
+    }
+
+    /**
+     * 指定されたステップの行動を実行
+     */
+    private executeActionStep(
+      currentStep: number,
+      maxSteps: number,
+      playerActionGroups: { [characterId: string]: ActionData[] },
+      enemyActionGroups: { [characterId: string]: ActionData[] }
+    ) {
+      console.log(`=== ステップ ${currentStep + 1}/${maxSteps} 実行開始 ===`);
+
+      let movingCharacters = 0;
+      let completedCharacters = 0;
+
+      const onStepComplete = () => {
+        completedCharacters++;
+        if (completedCharacters >= movingCharacters) {
+          console.log(`ステップ ${currentStep + 1} 完了 - 戦闘チェック実行`);
+
+          // このステップでの戦闘チェック
+          this.executeCombatChecks();
+
+          // 次のステップまたは完了処理
+          if (currentStep + 1 < maxSteps) {
+            // 次のステップへ
+            this.time.delayedCall(200, () => {
+              this.executeActionStep(
+                currentStep + 1,
+                maxSteps,
+                playerActionGroups,
+                enemyActionGroups
+              );
+            });
+          } else {
+            // 全ステップ完了
+            console.log(`全ステップ完了 - 最終処理`);
+            this.time.delayedCall(500, () => {
+              this.completeActionPhase();
+            });
+          }
+        }
+      };
+
+      // プレイヤーキャラクターの移動
+      Object.keys(playerActionGroups).forEach((characterId) => {
+        const actions = playerActionGroups[characterId];
+        if (currentStep < actions.length) {
+          const character = this.findCharacterById(characterId);
+          if (character) {
+            movingCharacters++;
+            this.executeCharacterSingleStep(
+              character,
+              actions[currentStep],
+              false,
+              onStepComplete
+            );
+          }
+        }
+      });
+
+      // 敵キャラクターの移動
+      Object.keys(enemyActionGroups).forEach((characterId) => {
+        const actions = enemyActionGroups[characterId];
+        if (currentStep < actions.length) {
+          const character = this.findEnemyCharacterById(characterId);
+          if (character) {
+            movingCharacters++;
+            this.executeCharacterSingleStep(
+              character,
+              actions[currentStep],
+              true,
+              onStepComplete
+            );
+          }
+        }
+      });
+
+      if (movingCharacters === 0) {
+        // このステップで移動するキャラクターがいない場合
+        console.log(`ステップ ${currentStep + 1}: 移動キャラクターなし`);
+        this.time.delayedCall(200, () => {
+          if (currentStep + 1 < maxSteps) {
+            this.executeActionStep(
+              currentStep + 1,
+              maxSteps,
+              playerActionGroups,
+              enemyActionGroups
+            );
+          } else {
+            this.completeActionPhase();
+          }
+        });
+      }
+    }
+
+    /**
+     * キャラクターの単一ステップ移動を実行
+     */
+    private executeCharacterSingleStep(
+      character: Phaser.GameObjects.Image,
+      action: ActionData,
+      isEnemy: boolean,
+      onComplete: () => void
+    ) {
+      const targetPosition = isEnemy
+        ? this.invertPosition(action.position)
+        : action.position;
+      const targetPixelPos = this.getHexPosition(
+        targetPosition.col,
+        targetPosition.row
+      );
+
+      // トリガー方向を設定
+      this.characterDirections.set(character, {
+        main: action.mainAzimuth,
+        sub: action.subAzimuth,
+      });
+
+      // 1秒で移動
+      this.tweens.add({
+        targets: character,
+        x: targetPixelPos.x,
+        y: targetPixelPos.y,
+        duration: 1000,
+        ease: "Power2",
+        onUpdate: () => {
+          if (this.isActionMode) {
+            this.updateTriggerPositionsForCharacter(character);
+          }
+        },
+        onComplete: () => {
+          // 位置情報を更新
+          this.characterPositions.set(character, targetPosition);
+
+          // トリガー表示を更新
+          if (this.isActionMode) {
+            this.showTriggerDirections(character);
+          }
+
+          onComplete();
+        },
+      });
     }
 
     /**
@@ -2655,14 +2795,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * 行動フェーズを完了して設定モードに戻る
      */
     private completeActionPhase() {
-      console.log("行動フェーズ完了 - 戦闘チェック開始");
-
-      // 戦闘チェックを実行
-      this.executeCombatChecks();
-
-      console.log("戦闘チェック完了 - 設定モードに戻ります");
+      console.log("行動フェーズ完了 - 設定モードに戻ります");
       this.isActionMode = false;
       this.actionAnimationInProgress = false;
+
+      // 全キャラクターのHPゲージを非表示にする
+      this.combatSystem.hideAllHpDisplays();
 
       // 全キャラクターのトリガー表示をクリア
       this.clearAllTriggerDisplays();

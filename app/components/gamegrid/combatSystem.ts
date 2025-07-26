@@ -83,6 +83,12 @@ export class CombatSystem {
       const healAmount = Math.floor(combatStats.maxHp * 0.1);
       combatStats.hp = Math.min(combatStats.maxHp, combatStats.hp + healAmount);
       this.characterState.combatStats.set(character, combatStats);
+
+      // HPバーを更新（行動モード中の場合）
+      const existingHpBar = character.getData('hpBar');
+      if (existingHpBar) {
+        this.updateHpDisplay(character, true);
+      }
     }
   }
 
@@ -93,18 +99,119 @@ export class CombatSystem {
     const results: CombatResult[] = [];
     this.updateActiveTriggerAreas();
 
+    // キャラクターごとの戦闘統計を記録
+    const combatSummary = new Map<Phaser.GameObjects.Image, {
+      totalDamageReceived: number;
+      avoidCount: number;
+      hitCount: number;
+      characterId: string;
+    }>();
+
     for (const triggerArea of this.activeTriggerAreas) {
       const enemies = this.getEnemiesInTriggerArea(triggerArea);
       
       for (const enemy of enemies) {
         const combatResult = this.executeCombat(triggerArea.character, enemy, triggerArea.triggerType);
+        // console.log(`戦闘結果: ${triggerArea.character} vs ${enemy}, ダメージ: ${combatResult?.damage}, ヒット: ${combatResult?.isHit}, 回避: ${combatResult?.isAvoid}, 撃破: ${combatResult?.isDefeat}`);
+
         if (combatResult) {
           results.push(combatResult);
+
+          // 防御側の統計を更新
+          const defenderId = this.characterState.ids.get(combatResult.defender) || "不明";
+          if (!combatSummary.has(combatResult.defender)) {
+            combatSummary.set(combatResult.defender, {
+              totalDamageReceived: 0,
+              avoidCount: 0,
+              hitCount: 0,
+              characterId: defenderId
+            });
+          }
+
+          const defenderSummary = combatSummary.get(combatResult.defender)!;
+          if (combatResult.isAvoid) {
+            defenderSummary.avoidCount++;
+          } else if (combatResult.isHit) {
+            defenderSummary.totalDamageReceived += combatResult.damage;
+            defenderSummary.hitCount++;
+          }
         }
       }
     }
 
+    // キャラクターごとの戦闘統計をキャラクターの直上に表示
+    if (combatSummary.size > 0) {
+      this.displayCombatSummaryOnCharacters(combatSummary);
+    }
+
     return results;
+  }
+
+  /**
+   * キャラクターの直上に戦闘統計を表示する
+   */
+  private displayCombatSummaryOnCharacters(
+    combatSummary: Map<Phaser.GameObjects.Image, {
+      totalDamageReceived: number;
+      avoidCount: number;
+      hitCount: number;
+      characterId: string;
+    }>
+  ): void {
+    for (const [character, summary] of combatSummary) {
+      const position = this.characterState.positions.get(character);
+      if (!position) continue;
+
+      const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
+
+      // 既存の統計表示があれば削除
+      const existingSummary = character.getData('combatSummary');
+      if (existingSummary) {
+        existingSummary.destroy();
+      }
+
+      // 統計テキストを作成
+      const summaryText = this.scene.add.text(
+        pixelPos.x,
+        pixelPos.y - this.config.hexRadius * 1.2,
+        '',
+        {
+          fontSize: '12px',
+          fontFamily: 'Arial',
+          color: '#ffffff',
+          backgroundColor: '#000000',
+          padding: { x: 4, y: 2 },
+          align: 'center'
+        }
+      );
+
+      // 表示内容を組み立て
+      let displayText = '';
+      if (summary.totalDamageReceived > 0) {
+        displayText += `ダメージ: ${summary.totalDamageReceived}`;
+      }
+      if (summary.avoidCount > 0) {
+        if (displayText) displayText += '\n';
+        displayText += `回避: ${summary.avoidCount}回`;
+      }
+
+      if (displayText) {
+        summaryText.setText(displayText);
+        summaryText.setOrigin(0.5, 1); // 中央下を基準点に
+        summaryText.setDepth(4); // HPバーより上に表示
+
+        // キャラクターに関連付け
+        character.setData('combatSummary', summaryText);
+
+        // 3秒後に自動で消す
+        this.scene.time.delayedCall(3000, () => {
+          if (summaryText && summaryText.scene) {
+            summaryText.destroy();
+            character.setData('combatSummary', null);
+          }
+        });
+      }
+    }
   }
 
   /**
@@ -113,11 +220,11 @@ export class CombatSystem {
   private updateActiveTriggerAreas(): void {
     this.activeTriggerAreas = [];
 
-    console.log("=== トリガーエリア更新開始 ===");
+    // console.log("=== トリガーエリア更新開始 ===");
     for (const [character, position] of this.characterState.positions) {
       const directions = this.characterState.directions.get(character);
       if (!directions) {
-        console.log("キャラクターの方向が見つかりません:", character);
+        // console.log("キャラクターの方向が見つかりません:", character);
         continue;
       }
 
@@ -126,7 +233,7 @@ export class CombatSystem {
       const characterStatus = CHARACTER_STATUS[characterKey];
 
       if (!characterStatus) {
-        console.log(`キャラクター ${characterId} のステータスが見つかりません`);
+        // console.log(`キャラクター ${characterId} のステータスが見つかりません`);
         continue;
       }
 
@@ -138,16 +245,21 @@ export class CombatSystem {
       const subTriggerKey = characterStatus.sub as keyof typeof TRIGGER_STATUS;
       const subTriggerStatus = TRIGGER_STATUS[subTriggerKey];
 
-      console.log(`キャラクター ${characterId}: 位置(${position.col}, ${position.row})`);
-      console.log(`  メイン ${mainTriggerKey}: 方向${directions.main}°(補正後${(directions.main - 90 + 360) % 360}°), 射程${mainTriggerStatus.range}ヘックス, 角度${mainTriggerStatus.angle}°`);
-      console.log(`  サブ ${subTriggerKey}: 方向${directions.sub}°(補正後${(directions.sub - 90 + 360) % 360}°), 射程${subTriggerStatus.range}ヘックス, 角度${subTriggerStatus.angle}°`);
+      // 敵キャラクターかどうかの判定
+      const isPlayerChar = this.isPlayerCharacter(character);
 
-      // メイントリガーエリア（正しい射程と角度を使用、表示と同じ2倍の半径）
+      // 敵キャラクターの場合は180度補正を追加
+      const mainDirectionCorrected = isPlayerChar ? directions.main : directions.main + 180;
+      const subDirectionCorrected = isPlayerChar ? directions.sub : directions.sub + 180;
+
+      // console.log(`キャラクター ${characterId}: 位置(${position.col}, ${position.row})`);
+      // console.log(`  メイン ${mainTriggerKey}: 方向${directions.main}°(補正後${(mainDirectionCorrected - 90 + 360) % 360}°), 射程${mainTriggerStatus.range}ヘックス, 角度${mainTriggerStatus.angle}°`);
+      // console.log(`  サブ ${subTriggerKey}: 方向${directions.sub}°(補正後${(subDirectionCorrected - 90 + 360) % 360}°), 射程${subTriggerStatus.range}ヘックス, 角度${subTriggerStatus.angle}°`);      // メイントリガーエリア（正しい射程と角度を使用、表示と同じ2倍の半径）
       this.activeTriggerAreas.push({
         character,
         triggerType: "main",
         centerPosition: position,
-        direction: directions.main,
+        direction: mainDirectionCorrected,
         radius: this.config.hexRadius * mainTriggerStatus.range * 2,
         angle: mainTriggerStatus.angle
       });
@@ -157,13 +269,13 @@ export class CombatSystem {
         character,
         triggerType: "sub",
         centerPosition: position,
-        direction: directions.sub,
+        direction: subDirectionCorrected,
         radius: this.config.hexRadius * subTriggerStatus.range * 2,
         angle: subTriggerStatus.angle
       });
     }
-    console.log(`アクティブトリガーエリア数: ${this.activeTriggerAreas.length}`);
-    console.log("=== トリガーエリア更新完了 ===");
+    // console.log(`アクティブトリガーエリア数: ${this.activeTriggerAreas.length}`);
+    // console.log("=== トリガーエリア更新完了 ===");
   }
 
   /**
@@ -172,32 +284,32 @@ export class CombatSystem {
   private getEnemiesInTriggerArea(triggerArea: TriggerArea): Phaser.GameObjects.Image[] {
     const enemies: Phaser.GameObjects.Image[] = [];
     const isPlayerCharacter = this.isPlayerCharacter(triggerArea.character);
-    const attackerCharacterId = this.characterState.ids.get(triggerArea.character) || "不明";
+    // const attackerCharacterId = this.characterState.ids.get(triggerArea.character) || "不明";
 
-    console.log(`--- ${attackerCharacterId}の${triggerArea.triggerType}トリガーチェック ---`);
-    console.log(`トリガー位置: (${triggerArea.centerPosition.col}, ${triggerArea.centerPosition.row})`);
-    console.log(`方向: ${triggerArea.direction}°, 半径: ${triggerArea.radius}px, 角度: ${triggerArea.angle}°`);
+    // // console.log(`--- ${attackerCharacterId}の${triggerArea.triggerType}トリガーチェック ---`);
+    // // console.log(`トリガー位置: (${triggerArea.centerPosition.col}, ${triggerArea.centerPosition.row})`);
+    // // console.log(`方向: ${triggerArea.direction}°, 半径: ${triggerArea.radius}px, 角度: ${triggerArea.angle}°`);
 
     for (const [character, position] of this.characterState.positions) {
-      const characterId = this.characterState.ids.get(character) || "不明";
+      // const characterId = this.characterState.ids.get(character) || "不明";
 
       // 同じ陣営のキャラクターはスキップ
       if (this.isPlayerCharacter(character) === isPlayerCharacter) {
-        console.log(`  ${characterId}: 同じ陣営なのでスキップ`);
+      // console.log(`  ${characterId}: 同じ陣営なのでスキップ`);
         continue;
       }
 
-      console.log(`  ${characterId}: 位置(${position.col}, ${position.row}) をチェック中...`);
+      // console.log(`  ${characterId}: 位置(${position.col}, ${position.row}) をチェック中...`);
 
       if (this.isCharacterInTriggerArea(character, position, triggerArea)) {
-        console.log(`  ${characterId}: トリガーエリア内に発見！戦闘対象に追加`);
+        // console.log(`  ${characterId}: トリガーエリア内に発見！戦闘対象に追加`);
         enemies.push(character);
       } else {
-        console.log(`  ${characterId}: トリガーエリア外`);
+        // console.log(`  ${characterId}: トリガーエリア外`);
       }
     }
 
-    console.log(`戦闘対象数: ${enemies.length}`);
+    // console.log(`戦闘対象数: ${enemies.length}`);
     return enemies;
   }
 
@@ -218,7 +330,7 @@ export class CombatSystem {
       Math.pow(characterPixel.y - centerPixel.y, 2)
     );
 
-    console.log(`    距離チェック: ${distance.toFixed(1)}px <= ${triggerArea.radius}px ? ${distance <= triggerArea.radius}`);
+    // console.log(`    距離チェック: ${distance.toFixed(1)}px <= ${triggerArea.radius}px ? ${distance <= triggerArea.radius}`);
 
     if (distance > triggerArea.radius) return false;
 
@@ -236,9 +348,9 @@ export class CombatSystem {
     const startAngle = ((triggerDirection - halfAngle) + 360) % 360;
     const endAngle = ((triggerDirection + halfAngle) + 360) % 360;
 
-    console.log(`    角度チェック: キャラクターへの角度${normalizedAngle.toFixed(1)}°`);
-    console.log(`    トリガー方向: ${triggerArea.direction.toFixed(1)}°(補正後${triggerDirection.toFixed(1)}°) (±${halfAngle}°)`);
-    console.log(`    範囲: ${startAngle.toFixed(1)}° - ${endAngle.toFixed(1)}°`);
+    // console.log(`    角度チェック: キャラクターへの角度${normalizedAngle.toFixed(1)}°`);
+    // console.log(`    トリガー方向: ${triggerArea.direction.toFixed(1)}°(補正後${triggerDirection.toFixed(1)}°) (±${halfAngle}°)`);
+    // console.log(`    範囲: ${startAngle.toFixed(1)}° - ${endAngle.toFixed(1)}°`);
 
     let inRange = false;
     if (startAngle <= endAngle) {
@@ -247,7 +359,7 @@ export class CombatSystem {
       inRange = normalizedAngle >= startAngle || normalizedAngle <= endAngle;
     }
 
-    console.log(`    角度範囲内: ${inRange}`);
+    // console.log(`    角度範囲内: ${inRange}`);
 
     return inRange;
   }
@@ -277,19 +389,21 @@ export class CombatSystem {
       return null;
     }
 
-    const isDefenderFacingAttacker = this.isCharacterFacingTarget(
-      defender, defenderPosition, attackerPosition
-    );
+    const defenderTriggerInfo = this.getDefenderTriggerInfo(defender, attackerPosition);
+    const hasTriggerFacing = defenderTriggerInfo && (defenderTriggerInfo.mainFacing || defenderTriggerInfo.subFacing);
 
     let isAvoid = false;
     let damage = 0;
 
-    if (isDefenderFacingAttacker) {
-      // 回避判定
+    if (hasTriggerFacing) {
+    // トリガーが攻撃者を向いている場合：回避判定あり
       const defenderTriggerStats = this.getDefenderTriggerStats(defender, attackerPosition);
       if (defenderTriggerStats) {
         const avoidChance = (defenderStats.avoid * defenderTriggerStats.avoid) / 100;
         isAvoid = Math.random() < avoidChance;
+
+        // console.log(`防御判定: メイン向き=${defenderTriggerInfo!.mainFacing}, サブ向き=${defenderTriggerInfo!.subFacing}`);
+        // console.log(`回避値合計: ${defenderTriggerStats.avoid}, 回避率: ${avoidChance.toFixed(2)}, 回避${isAvoid ? '成功' : '失敗'}`);
       }
 
       if (!isAvoid) {
@@ -301,8 +415,9 @@ export class CombatSystem {
         damage = Math.max(1, damage - defenderHp);
       }
     } else {
-      // 防御・回避なし、即座に撃破
+      // トリガーが攻撃者を向いていない場合：防御・回避なし、即座に撃破
       damage = defenderStats.hp;
+      // console.log(`防御なし: どちらのトリガーも攻撃者を向いていません`);
     }
 
     const isHit = !isAvoid && damage > 0;
@@ -312,9 +427,15 @@ export class CombatSystem {
       defenderStats.hp = Math.max(0, defenderStats.hp - damage);
       this.characterState.combatStats.set(defender, defenderStats);
 
+      // HPバーを更新（行動モード中の場合）
+      const existingHpBar = defender.getData('hpBar');
+      if (existingHpBar) {
+        this.updateHpDisplay(defender, true);
+      }
+
       // スタン効果を適用（攻撃・防御時）
       this.applyStunEffect(attacker, 1000); // 1秒間スタン
-      if (isDefenderFacingAttacker && !isAvoid) {
+      if (hasTriggerFacing && !isAvoid) {
         this.applyStunEffect(defender, 1000); // 1秒間スタン
       }
 
@@ -380,6 +501,45 @@ export class CombatSystem {
     defender: Phaser.GameObjects.Image,
     attackerPosition: Position
   ): TriggerStats | null {
+    const defenderTriggerInfo = this.getDefenderTriggerInfo(defender, attackerPosition);
+    if (!defenderTriggerInfo) return null;
+
+    // 向いているトリガーのavoidとdefenseを合計
+    let totalAvoid = 0;
+    let totalDefense = 0;
+    let totalTrionEffect = 0;
+
+    if (defenderTriggerInfo.mainFacing) {
+      totalAvoid += defenderTriggerInfo.triggerStats.main.avoid;
+      totalDefense += defenderTriggerInfo.triggerStats.main.defense;
+      totalTrionEffect += defenderTriggerInfo.triggerStats.main.trionEffect;
+    }
+
+    if (defenderTriggerInfo.subFacing) {
+      totalAvoid += defenderTriggerInfo.triggerStats.sub.avoid;
+      totalDefense += defenderTriggerInfo.triggerStats.sub.defense;
+      totalTrionEffect += defenderTriggerInfo.triggerStats.sub.trionEffect;
+    }
+
+    // どちらのトリガーも向いていない場合
+    if (!defenderTriggerInfo.mainFacing && !defenderTriggerInfo.subFacing) {
+      return null;
+    }
+
+    return {
+      avoid: totalAvoid,
+      defense: totalDefense,
+      trionEffect: totalTrionEffect
+    };
+  }
+
+  /**
+   * 防御側のトリガー向き情報を取得
+   */
+  private getDefenderTriggerInfo(
+    defender: Phaser.GameObjects.Image,
+    attackerPosition: Position
+  ): { mainFacing: boolean; subFacing: boolean; triggerStats: { main: TriggerStats; sub: TriggerStats } } | null {
     const defenderPosition = this.characterState.positions.get(defender);
     const defenderDirections = this.characterState.directions.get(defender);
     const defenderTriggerStats = this.characterState.triggerStats.get(defender);
@@ -396,13 +556,13 @@ export class CombatSystem {
       attackerPixel.x - defenderPixel.x
     ) * (180 / Math.PI);
 
-    // メイントリガーが向いているかチェック
-    const checkDirection = (direction: number): boolean => {
+    // トリガーが向いているかチェック（半径無限大の扇形判定）
+    const checkDirection = (direction: number, triggerAngle: number): boolean => {
       const normalizedAngle = ((angleToAttacker % 360) + 360) % 360;
       // 表示と同じように-90度補正を適用
       const triggerDirection = ((direction - 90) % 360 + 360) % 360;
 
-      const halfAngle = 30; // 60度扇形の半分
+      const halfAngle = triggerAngle / 2;
       const startAngle = ((triggerDirection - halfAngle) + 360) % 360;
       const endAngle = ((triggerDirection + halfAngle) + 360) % 360;
 
@@ -413,13 +573,33 @@ export class CombatSystem {
       }
     };
 
-    if (checkDirection(defenderDirections.main)) {
-      return defenderTriggerStats.main;
-    } else if (checkDirection(defenderDirections.sub)) {
-      return defenderTriggerStats.sub;
+    // 実際のトリガーの角度を取得
+    const characterId = this.characterState.ids.get(defender) || "不明";
+    const characterKey = `character${characterId}` as keyof typeof CHARACTER_STATUS;
+    const characterStatus = CHARACTER_STATUS[characterKey];
+
+    if (!characterStatus) {
+      return null;
     }
 
-    return null;
+    const mainTriggerKey = characterStatus.main as keyof typeof TRIGGER_STATUS;
+    const subTriggerKey = characterStatus.sub as keyof typeof TRIGGER_STATUS;
+    const mainTriggerAngle = TRIGGER_STATUS[mainTriggerKey].angle;
+    const subTriggerAngle = TRIGGER_STATUS[subTriggerKey].angle;
+
+    // 敵キャラクターの場合は180度補正を適用
+    const isPlayerChar = this.isPlayerCharacter(defender);
+    const mainDirectionCorrected = isPlayerChar ? defenderDirections.main : defenderDirections.main + 180;
+    const subDirectionCorrected = isPlayerChar ? defenderDirections.sub : defenderDirections.sub + 180;
+
+    const mainFacing = checkDirection(mainDirectionCorrected, mainTriggerAngle);
+    const subFacing = checkDirection(subDirectionCorrected, subTriggerAngle);
+
+    return {
+      mainFacing,
+      subFacing,
+      triggerStats: defenderTriggerStats
+    };
   }
 
   /**
@@ -491,7 +671,7 @@ export class CombatSystem {
     this.characterState.combatStats.delete(character);
     this.characterState.triggerStats.delete(character);
 
-    console.log("キャラクターが撃破されました");
+    // console.log("キャラクターが撃破されました");
   }
 
   /**
@@ -526,30 +706,44 @@ export class CombatSystem {
   /**
    * HPバーを更新表示
    */
-  updateHpDisplay(character: Phaser.GameObjects.Image): void {
+  updateHpDisplay(character: Phaser.GameObjects.Image, showHp: boolean = false): void {
+    // 既存のHPバーがあれば削除
+    const existingHpBar = character.getData('hpBar');
+    if (existingHpBar) {
+      existingHpBar.destroy();
+      character.setData('hpBar', null);
+    }
+
+    // 行動モード時のみ表示
+    if (!showHp) return;
+
     const combatStats = this.characterState.combatStats.get(character);
     const position = this.characterState.positions.get(character);
     
     if (!combatStats || !position) return;
 
     const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
+    const isPlayer = this.isPlayerCharacter(character);
     
-    // HPバーを描画（既存のHPバーがあれば削除）
-    const existingHpBar = character.getData('hpBar');
-    if (existingHpBar) {
-      existingHpBar.destroy();
-    }
-
+    // HPバーを描画
     const hpBar = this.scene.add.graphics();
     hpBar.setDepth(3);
     
     const barWidth = this.config.hexRadius * 1.5;
-    const barHeight = 4;
-    const barX = pixelPos.x - barWidth / 2;
-    const barY = pixelPos.y - this.config.hexRadius * 0.8;
+    const barHeight = 6;
+    
+    // 味方は右側、敵は左側に表示
+    const barX = isPlayer 
+      ? pixelPos.x + this.config.hexRadius * 0.8  // 右側
+      : pixelPos.x - this.config.hexRadius * 0.8 - barWidth; // 左側
+    const barY = pixelPos.y - this.config.hexRadius * 0.3;
 
-    // 背景
+    // 背景（黒枠）
     hpBar.fillStyle(0x000000);
+    hpBar.fillRect(barX - 1, barY - 1, barWidth + 2, barHeight + 2);
+
+    // 背景（グレー）
+    hpBar.fillStyle(0x333333);
     hpBar.fillRect(barX, barY, barWidth, barHeight);
 
     // HP
@@ -558,6 +752,41 @@ export class CombatSystem {
     hpBar.fillStyle(hpColor);
     hpBar.fillRect(barX, barY, barWidth * hpRatio, barHeight);
 
-    character.setData('hpBar', hpBar);
+    // HP数値表示
+    const hpText = this.scene.add.text(
+      barX + barWidth / 2,
+      barY + barHeight / 2,
+      `${combatStats.hp}/${combatStats.maxHp}`,
+      {
+        fontSize: '10px',
+        fontFamily: 'Arial',
+        color: '#ffffff',
+        align: 'center'
+      }
+    );
+    hpText.setOrigin(0.5, 0.5);
+    hpText.setDepth(4);
+
+    // HPバーとテキストをグループ化
+    const hpGroup = this.scene.add.group([hpBar, hpText]);
+    character.setData('hpBar', hpGroup);
+  }
+
+  /**
+   * すべてのキャラクターのHPを表示する（行動モード開始時）
+   */
+  showAllHpDisplays(): void {
+    for (const [character] of this.characterState.positions) {
+      this.updateHpDisplay(character, true);
+    }
+  }
+
+  /**
+   * すべてのキャラクターのHPを非表示にする（行動モード終了時）
+   */
+  hideAllHpDisplays(): void {
+    for (const [character] of this.characterState.positions) {
+      this.updateHpDisplay(character, false);
+    }
   }
 }
