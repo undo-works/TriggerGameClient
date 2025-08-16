@@ -1,6 +1,14 @@
 # Multi-stage build for production
 FROM node:18-alpine AS base
 
+# Build引数を定義
+ARG VITE_WS_SERVER_URL
+ARG NODE_ENV=production
+
+# 環境変数として設定
+ENV VITE_WS_SERVER_URL=$VITE_WS_SERVER_URL
+ENV NODE_ENV=$NODE_ENV
+
 # Dependencies stage
 FROM base AS deps
 WORKDIR /app

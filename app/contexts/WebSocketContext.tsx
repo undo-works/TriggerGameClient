@@ -99,7 +99,9 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
   const [connectionStatus, setConnectionStatus] = useState<
     "connecting" | "connected" | "disconnected" | "error"
   >("disconnected");
-  const [readyState, setReadyState] = useState<number>(WebSocket.CLOSED);
+  const [readyState, setReadyState] = useState<number>(
+    typeof window !== "undefined" ? WebSocket.CLOSED : 3
+  );
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [matchId, setMatchId] = useState<string | null>(null);
 
@@ -123,6 +125,12 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
 
   // WebSocket接続関数
   const connect = () => {
+    // サーバーサイドでは何もしない
+    if (typeof window === "undefined") {
+      console.log("サーバー環境のため WebSocket 接続をスキップします");
+      return;
+    }
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       console.log("WebSocket is already connected");
       return;
@@ -131,7 +139,8 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     try {
       setConnectionStatus("connecting");
       setReadyState(WebSocket.CONNECTING);
-      const wsUrl = "ws://localhost:8080/";
+      const wsUrl =
+        import.meta.env.VITE_WS_SERVER_URL || "ws://localhost:8080/";
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
@@ -242,6 +251,13 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
 
   // メッセージ送信関数
   const sendMessage = (message: WebSocketMessage) => {
+    // サーバーサイドでは何もしない
+    if (typeof window === "undefined") {
+      console.warn(
+        "サーバー環境のため WebSocket メッセージ送信をスキップします"
+      );
+      return;
+    }
     console.log("WebSocket接続状態(state):", readyState);
     console.log("WebSocket接続状態(ref):", wsRef.current?.readyState);
 

@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}
   IMAGE_NAME: trigger-game
+  VITE_WS_SERVER_URL: ${{ vars.VITE_WS_SERVER_URL }}
 
 jobs:
   build-and-deploy:
@@ -51,7 +52,11 @@ jobs:
         LATEST_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
         
         # Build image
-        docker build -t $IMAGE_TAG -t $LATEST_TAG .
+        docker build \
+          --build-arg VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
+          --build-arg NODE_ENV=production \
+          -t $IMAGE_TAG \
+          -t $LATEST_TAG \
         
         # Push images
         docker push $IMAGE_TAG
@@ -83,7 +88,10 @@ jobs:
           --memory 1 \
           --os-type Linux \
           --restart-policy Always \
-          --environment-variables NODE_ENV=production PORT=3000 \
+          --environment-variables \
+            NODE_ENV=production \
+            PORT=3000 \
+            VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
           --location japaneast \
           || az container update \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
