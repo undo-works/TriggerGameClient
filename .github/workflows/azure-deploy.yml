@@ -1,0 +1,99 @@
+name: Deploy to Azure Container Instances
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}
+  IMAGE_NAME: trigger-game
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Setup Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    # Install dependencies and run tests
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests
+      run: npm test --if-present
+
+    - name: Run linting
+      run: npm run lint --if-present
+
+    # Build Docker image
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}
+        username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
+        password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+
+    - name: Build and push Docker image
+      run: |
+        # Generate unique tag
+        IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        LATEST_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Build image
+        docker build -t $IMAGE_TAG -t $LATEST_TAG .
+        
+        # Push images
+        docker push $IMAGE_TAG
+        docker push $LATEST_TAG
+        
+        # Set output for next step
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+    # Deploy to Azure Container Instances
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to Azure Container Instances
+      run: |
+        az container create \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --name ${{ secrets.AZURE_CONTAINER_NAME }} \
+          --image ${{ env.IMAGE_TAG }} \
+          --registry-login-server ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }} \
+          --registry-username ${{ secrets.AZURE_REGISTRY_USERNAME }} \
+          --registry-password ${{ secrets.AZURE_REGISTRY_PASSWORD }} \
+          --dns-name-label trigger-game-$(date +%s) \
+          --ports 3000 \
+          --cpu 0.5 \
+          --memory 1 \
+          --restart-policy Always \
+          --environment-variables NODE_ENV=production PORT=3000 \
+          --location japaneast \
+          || az container update \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AZURE_CONTAINER_NAME }} \
+            --image ${{ env.IMAGE_TAG }}
+
+    # Get deployment URL
+    - name: Get Container Instance URL
+      run: |
+        FQDN=$(az container show \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --name ${{ secrets.AZURE_CONTAINER_NAME }} \
+          --query ipAddress.fqdn \
+          --output tsv)
+        echo "🚀 Deployment successful!"
+        echo "🌐 Application URL: http://$FQDN:3000"
