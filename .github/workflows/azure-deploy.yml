@@ -66,6 +66,8 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+    # 以下のリファレンスを参照
+    # https://learn.microsoft.com/en-us/cli/azure/container?view=azure-cli-latest#az-container-create
     - name: Deploy to Azure Container Instances
       run: |
         az container create \
@@ -79,7 +81,7 @@ jobs:
           --ports 3000 \
           --cpu 0.5 \
           --memory 1 \
-          --osType Linux \
+          --os-type Linux \
           --restart-policy Always \
           --environment-variables NODE_ENV=production PORT=3000 \
           --location japaneast \
