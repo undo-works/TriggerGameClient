@@ -56,8 +56,8 @@ jobs:
           --build-arg VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
           --build-arg NODE_ENV=production \
           -t $IMAGE_TAG \
-          -t $LATEST_TAG \
-        
+          -t $LATEST_TAG .
+
         # Push images
         docker push $IMAGE_TAG
         docker push $LATEST_TAG
