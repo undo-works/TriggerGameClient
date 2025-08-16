@@ -79,6 +79,7 @@ jobs:
           --ports 3000 \
           --cpu 0.5 \
           --memory 1 \
+          --osType Linux \
           --restart-policy Always \
           --environment-variables NODE_ENV=production PORT=3000 \
           --location japaneast \
