@@ -101,3 +101,46 @@ export interface TriggerArea {
   radius: number;
   angle: number;
 }
+
+/** ターンごとの戦闘結果レスポンス型定義 */
+export interface TurnCompleteResult {
+  turnNumber: number;
+  totalSteps: number;
+  allStepResults: CombatStepResult[];
+  timestamp: string; // ISO 8601
+}
+
+/** ステップごとの実行結果 */
+export interface CombatStepResult {
+  stepNumber: number;
+  stepCharacterResult: StepCharacterResult[];
+  winnerId: string | null;
+}
+
+/** ステップ内のキャラクターごとの実行結果 */
+export interface StepCharacterResult {
+  playerId: string;
+  characterId: string;
+  characterStatus: CharacterStatus;
+  position: Position;
+  mainTriggerDirection: number;
+  subTriggerDirection: number;
+  mainTriggerHP: number;
+  subTriggerHP: number;
+  guardCount: number;
+  avoidCount: number;
+  isDefeat: boolean;
+}
+
+/** キャラクターのステータス */
+export interface CharacterStatus {
+  main: string;
+  sub: string;
+  activeCount: number;
+  trion: number;
+  attack: number;
+  defense: number;
+  avoid: number;
+  support: number;
+  technique: number;
+}

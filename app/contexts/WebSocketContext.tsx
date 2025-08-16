@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { TurnCompleteResult } from "~/components/gamegrid/types";
 
 /**
  * WebSocketで送信するアクションデータの型定義
@@ -38,7 +39,9 @@ export interface WebSocketMessage {
   opponentPlayerId?: string; // opponent_cancelled_match用
   turnNumber?: number;
   timestamp?: string;
-  result?: Record<string, unknown>;
+  result?: TurnCompleteResult;
+  /** マッチング開始時のキャラクター情報 */
+  characters?: string[];
   gameState?: Record<string, unknown>;
   playerCount?: number;
   message?: string;

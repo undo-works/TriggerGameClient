@@ -78,7 +78,7 @@ export const TRIGGER_STATUS = {
   },
   ASTEROID: {
     angle: 60,
-    range: 4,
+    range: 5,
     attack: 4,
     avoid: 10,
     defense: 0,

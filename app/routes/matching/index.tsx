@@ -2,16 +2,17 @@ import { useState, useEffect } from 'react';
 import type { MetaFunction } from '@remix-run/node';
 import { useNavigate } from '@remix-run/react';
 import { useWebSocket, type WebSocketMessage } from '../../contexts/WebSocketContext';
+import { playerCharacterKeys } from "~/utils/CharacterConfig";
 
 export const meta: MetaFunction = () => {
   return [
-    { title: 'Matching - TriggerApp' },
-    { name: 'description', content: 'Find and match with other players' },
+    { title: "Matching - TriggerApp" },
+    { name: "description", content: "Find and match with other players" },
   ];
 };
 
 interface MatchingStatus {
-  status: 'connecting' | 'waiting' | 'matched' | 'error';
+  status: "connecting" | "waiting" | "matched" | "error";
   matchId?: string;
   playerId?: string;
   playerCount?: number;
@@ -21,9 +22,9 @@ interface MatchingStatus {
 export default function MatchingPage() {
   const navigate = useNavigate();
   const [matchingStatus, setMatchingStatus] = useState<MatchingStatus>({
-    status: 'connecting'
+    status: "connecting",
   });
-  
+
   const {
     readyState,
     sendMessage,
@@ -134,6 +135,7 @@ export default function MatchingPage() {
       // マッチング開始メッセージを送信
       sendMessage({
         type: "matchmaking",
+        characters: playerCharacterKeys,
       });
       console.log("マッチング開始メッセージを送信しました");
     } else {
