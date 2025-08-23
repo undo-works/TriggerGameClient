@@ -35,16 +35,35 @@ az login
 az group create --name trigger-game-rg --location japaneast
 ```
 
-### 1.3 Azure Container Registry (ACR) の作成
+### 1.3 Azure Container Apps の作成
 
 ```bash
-# Container Registry のリソースプロバイダーを登録
-az provider register --namespace Microsoft.ContainerRegistry
+# Container Apps のリソースプロバイダーを登録
+az provider register --namespace Microsoft.App
 
-# コンテナレジストリを作成
-az acr create --resource-group trigger-game-rg --name triggergameacr --sku Basic --admin-enabled true
+# Container Apps の監視を有効化
+az provider register --namespace Microsoft.OperationalInsights
 
-# ログイン認証情報を取得
-az acr credential show --name triggergameacr
+# Container Apps 環境を作成
+az containerapp env create \
+  --name trigger-game-env \
+  --resource-group trigger-game-rg \
+  --location japaneast
+
+# Container App を作成（Scale to Zero 有効）
+az containerapp create \
+  --name trigger-game-app \
+  --resource-group trigger-game-rg \
+  --environment trigger-game-env \
+  --image triggergameacr.azurecr.io/trigger-game:latest \
+  --target-port 3000 \
+  --ingress external \
+  --min-replicas 0 \
+  --max-replicas 10 \
+  --cpu 0.5 \
+  --memory 1Gi \
+  --registry-server triggergameacr.azurecr.io \
+  --registry-username [ACRユーザー名] \
+  --registry-password [ACRパスワード]
 ```
 

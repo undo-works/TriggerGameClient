@@ -1,4 +1,5 @@
-name: Deploy to Azure Container Instances
+# .github/workflows/azure-deploy.yml
+name: Deploy to Azure Container Apps
 
 on:
   push:
@@ -65,46 +66,72 @@ jobs:
         # Set output for next step
         echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
-    # Deploy to Azure Container Instances
+    # Deploy to Azure Container Apps
     - name: Login to Azure
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    # 以下のリファレンスを参照
-    # https://learn.microsoft.com/en-us/cli/azure/container?view=azure-cli-latest#az-container-create
-    - name: Deploy to Azure Container Instances
+    # Container Apps 環境の確保
+    - name: Ensure Container Apps Environment
       run: |
-        az container create \
+        # Container Apps 環境が存在するかチェック
+        az containerapp env show \
+          --name trigger-game-env \
           --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-          --name ${{ secrets.AZURE_CONTAINER_NAME }} \
-          --image ${{ env.IMAGE_TAG }} \
-          --registry-login-server ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }} \
-          --registry-username ${{ secrets.AZURE_REGISTRY_USERNAME }} \
-          --registry-password ${{ secrets.AZURE_REGISTRY_PASSWORD }} \
-          --dns-name-label trigger-game-$(date +%s) \
-          --ports 3000 \
-          --cpu 0.5 \
-          --memory 1 \
-          --os-type Linux \
-          --restart-policy Always \
-          --environment-variables \
-            NODE_ENV=production \
-            PORT=3000 \
-            VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
-          --location japaneast \
-          || az container update \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.AZURE_CONTAINER_NAME }} \
-            --image ${{ env.IMAGE_TAG }}
+          --query "name" --output tsv || \
+        az containerapp env create \
+          --name trigger-game-env \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --location japaneast
 
-    # Get deployment URL
-    - name: Get Container Instance URL
+    # Container Apps へのデプロイ
+    - name: Deploy to Azure Container Apps
       run: |
-        FQDN=$(az container show \
+        # Container App が存在するかチェックして更新または作成
+        if az containerapp show \
+          --name ${{ secrets.AZURE_CONTAINER_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --query "name" --output tsv > /dev/null 2>&1; then
+          
+          echo "Container App が存在します。更新中..."
+          az containerapp update \
+            --name ${{ secrets.AZURE_CONTAINER_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.IMAGE_TAG }} \
+            --set-env-vars \
+              NODE_ENV=production \
+              PORT=3000 \
+              VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }}
+        else
+          echo "Container App が存在しません。新規作成中..."
+          az containerapp create \
+            --name ${{ secrets.AZURE_CONTAINER_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --environment trigger-game-env \
+            --image ${{ env.IMAGE_TAG }} \
+            --target-port 3000 \
+            --ingress external \
+            --min-replicas 0 \
+            --max-replicas 5 \
+            --cpu 0.5 \
+            --memory 1Gi \
+            --registry-server ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }} \
+            --registry-username ${{ secrets.AZURE_REGISTRY_USERNAME }} \
+            --registry-password ${{ secrets.AZURE_REGISTRY_PASSWORD }} \
+            --env-vars \
+              NODE_ENV=production \
+              PORT=3000 \
+              VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }}
+        fi
+
+    # Get deployment URL（Container Apps 用）
+    - name: Get Container App URL
+      run: |
+        FQDN=$(az containerapp show \
           --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
           --name ${{ secrets.AZURE_CONTAINER_NAME }} \
-          --query ipAddress.fqdn \
+          --query properties.configuration.ingress.fqdn \
           --output tsv)
         echo "🚀 Deployment successful!"
-        echo "🌐 Application URL: http://$FQDN:3000"
+        echo "🌐 Application URL: https://$FQDN"
