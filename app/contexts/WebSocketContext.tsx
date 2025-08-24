@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  ReactNode,
+} from "react";
 import { TurnCompleteResult } from "~/components/gamegrid/types";
 
 /**
@@ -30,7 +37,8 @@ export interface WebSocketMessage {
     | "match_waiting"
     | "match_found"
     | "player_assigned"
-    | "error";
+    | "error"
+    | "system";
   playerId?: string;
   matchId?: string;
   actionHistory?: ActionData[];
@@ -46,6 +54,16 @@ export interface WebSocketMessage {
   playerCount?: number;
   message?: string;
   status?: string; // for matchmaking_result status (waiting, matched, etc.)
+  /** Web PubSub イベント名 */
+  event?: string;
+}
+
+/**
+ * Web PubSub 認証レスポンスの型定義
+ */
+interface PubSubAuthResponse {
+  url: string;
+  accessToken?: string;
 }
 
 /**
@@ -117,14 +135,87 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
 
   // プレイヤーIDの初期化
   useEffect(() => {
-    const storedPlayerId = localStorage.getItem("playerId");
-    if (storedPlayerId) {
-      setPlayerId(storedPlayerId);
+    if (typeof window !== "undefined") {
+      const storedPlayerId = localStorage.getItem("playerId");
+      if (storedPlayerId) {
+        setPlayerId(storedPlayerId);
+      }
     }
   }, []);
 
+  /**
+   * 環境判定関数
+   */
+  const isLocalEnvironment = (): boolean => {
+    if (typeof window === "undefined") return false;
+
+    const hostname = window.location.hostname;
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.includes("localhost")
+    );
+  };
+
+  /**
+   * Web PubSub 認証API呼び出し
+   */
+  const getWebPubSubUrl = async (): Promise<string> => {
+    try {
+      // 認証APIエンドポイント（自分のアプリケーション内のAPI）
+      const authApiUrl = process.env.WEB_PUBSUB_AUTH_API_URL;
+      if (!authApiUrl) {
+        throw new Error("WEB_PUBSUB_AUTH_API_URL is not defined");
+      }
+
+      const response = await fetch(authApiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: playerId || "anonymous",
+          roles: ["webpubsub.sendToGroup", "webpubsub.joinLeaveGroup"],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`認証API呼び出し失敗: ${response.status}`);
+      }
+
+      const authData: PubSubAuthResponse = await response.json();
+      console.log("Web PubSub 認証成功:", authData.url);
+
+      return authData.url;
+    } catch (error) {
+      console.error("Web PubSub 認証エラー:", error);
+      throw error;
+    }
+  };
+
+  /**
+   * WebSocket URL を取得
+   */
+  const getWebSocketUrl = async (): Promise<string> => {
+    // ローカル環境の場合
+    if (isLocalEnvironment()) {
+      return "ws://localhost:8080/";
+    }
+
+    // 本番環境の場合：Web PubSub を使用
+    try {
+      return await getWebPubSubUrl();
+    } catch (error) {
+      console.error("Web PubSub URL取得失敗、フォールバックURLを使用:", error);
+
+      // フォールバック：従来の方式
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.hostname}:8080/`;
+    }
+  };
+
   // WebSocket接続関数
-  const connect = () => {
+  const connect = async () => {
     // サーバーサイドでは何もしない
     if (typeof window === "undefined") {
       console.log("サーバー環境のため WebSocket 接続をスキップします");
@@ -139,14 +230,31 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     try {
       setConnectionStatus("connecting");
       setReadyState(WebSocket.CONNECTING);
-      const wsUrl =
-        import.meta.env.VITE_WS_SERVER_URL || "ws://localhost:8080/";
+
+      // 環境に応じてWebSocket URLを取得
+      const wsUrl = await getWebSocketUrl();
+      console.log("WebSocket接続先:", wsUrl);
+
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
         console.log("WebSocket接続が確立されました");
         setConnectionStatus("connected");
         setReconnectAttempts(0);
+
+        // Web PubSub の場合は初期化メッセージを送信
+        if (!isLocalEnvironment()) {
+          // Web PubSub グループに参加
+          const joinMessage = {
+            type: "joinGroup",
+            group: "game-lobby",
+            userId: playerId || "anonymous",
+          };
+
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify(joinMessage));
+          }
+        }
 
         // 実際のWebSocketの状態が確実にOPENになるまで待つ
         const checkReadyState = () => {
@@ -172,6 +280,14 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
           const data: WebSocketMessage = JSON.parse(event.data);
           console.log("WebSocketメッセージ受信:", data);
 
+          // Web PubSub の場合のメッセージ処理
+          if (!isLocalEnvironment()) {
+            // Web PubSub からのメッセージは少し異なる形式の可能性があるため変換
+            if (data.type === "system" && data.event === "connected") {
+              data.type = "connected";
+            }
+          }
+
           // コネクションが成立
           if (data.type === "connected") {
             setConnectionStatus("connected");
@@ -181,7 +297,9 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
           // プレイヤーIDが発行された場合は保存
           if (data.type === "matchmaking_result" && data.playerId) {
             setPlayerId(data.playerId);
-            localStorage.setItem("playerId", data.playerId);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("playerId", data.playerId);
+            }
           }
 
           // マッチIDが含まれている場合は保存
@@ -268,11 +386,23 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
       wsRef.current.readyState === WebSocket.OPEN
     ) {
       // プレイヤーIDとマッチIDを自動的に追加
-      const messageWithIds = {
-        ...message,
-        playerId: message.playerId || playerId,
-        matchId: message.matchId || matchId,
-      };
+      const messageWithIds = isLocalEnvironment()
+        ? {
+            ...message,
+            playerId: message.playerId || playerId,
+            matchId: message.matchId || matchId,
+          }
+        : {
+            // Web PubSub の場合はメッセージ形式を調整
+            type: "sendToGroup",
+            group: "game-lobby",
+            dataType: "json",
+            data: {
+              ...message,
+              playerId: message.playerId || playerId,
+              matchId: message.matchId || matchId,
+            },
+          };
 
       console.log("WebSocketメッセージ送信:", messageWithIds);
       wsRef.current.send(JSON.stringify(messageWithIds));
@@ -345,7 +475,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
 export const useWebSocket = () => {
   const context = useContext(WebSocketContext);
   if (!context) {
-    throw new Error('useWebSocket must be used within a WebSocketProvider');
+    throw new Error("useWebSocket must be used within a WebSocketProvider");
   }
   return context;
 };

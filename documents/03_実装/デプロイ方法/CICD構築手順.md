@@ -19,10 +19,10 @@ az account show --query id --output tsv
 
 # サービスプリンシパルを作成
 # {subscription-id}は上記で取得したサブスクリプションIDに置き換えてください
-az ad sp create-for-rbac --name "trigger-game-github-actions" --role contributor --scopes /subscriptions/{subscription-id}/resourceGroups/trigger-game-rg --sdk-auth
+az ad sp create-for-rbac --name "trigger-game-github-actions" --role contributor --scopes /subscriptions/{subscription-id}/resourceGroups/trigger-game-rg --json-auth
 
-# Microsoft.ContainerInstanceのリソースプロバイダーを登録
-az provider register --namespace Microsoft.ContainerInstance
+# Microsoft.Appのリソースプロバイダーを登録
+az provider register --namespace Microsoft.App
 ```
 
 ## 2. GitHub Secrets の設定
@@ -38,6 +38,13 @@ GitHub リポジトリの **Settings > Secrets and variables > Actions > Reposit
 | `AZURE_RESOURCE_GROUP` | `trigger-game-rg` |
 | `AZURE_CONTAINER_NAME` | `trigger-game-app` |
 | `AZURE_CONTAINER_ENV_NAME` | `trigger-game-env` |
+
+環境変数の設定
+
+| 環境変数名 | 値 |
+|---------|---|
+| `VITE_WS_SERVER_URL` | WebSocketサーバーのURL |
+| `WEB_PUBSUB_AUTH_API_URL` | Web PubSub 認証APIのURL |
 
 ## 3. Dockerfile の作成
 
