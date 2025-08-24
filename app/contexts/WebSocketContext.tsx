@@ -162,8 +162,9 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
    */
   const getWebPubSubUrl = async (): Promise<string> => {
     try {
-      // 認証APIエンドポイント（自分のアプリケーション内のAPI）
-      const authApiUrl = process.env.VITE_WEB_PUBSUB_AUTH_API_URL;
+      // 認証APIエンドポイント
+      const authApiUrl =
+        "https://trigger-game-ws-functions-prod.azurewebsites.net/api/negotiate";
       if (!authApiUrl) {
         throw new Error("VITE_WEB_PUBSUB_AUTH_API_URL is not defined");
       }
