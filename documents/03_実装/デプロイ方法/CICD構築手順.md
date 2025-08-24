@@ -46,7 +46,7 @@ GitHub リポジトリの **Settings > Secrets and variables > Actions > Reposit
 | 環境変数名 | 値 |
 |---------|---|
 | `VITE_WS_SERVER_URL` | WebSocketサーバーのURL |
-| `WEB_PUBSUB_AUTH_API_URL` | Web PubSub 認証APIのURL |
+| `VITE_WEB_PUBSUB_AUTH_API_URL` | Web PubSub 認証APIのURL |
 
 ## 4. デプロイの確認
 

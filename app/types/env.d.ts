@@ -4,7 +4,7 @@
 interface ImportMetaEnv {
   readonly VITE_WS_SERVER_URL: string;
   readonly VITE_API_BASE_URL: string;
-  readonly WEB_PUBSUB_AUTH_API_URL: string;
+  readonly VITE_WEB_PUBSUB_AUTH_API_URL: string;
   // 他の環境変数も定義
 }
 

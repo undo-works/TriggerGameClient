@@ -163,9 +163,9 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
   const getWebPubSubUrl = async (): Promise<string> => {
     try {
       // 認証APIエンドポイント（自分のアプリケーション内のAPI）
-      const authApiUrl = process.env.WEB_PUBSUB_AUTH_API_URL;
+      const authApiUrl = process.env.VITE_WEB_PUBSUB_AUTH_API_URL;
       if (!authApiUrl) {
-        throw new Error("WEB_PUBSUB_AUTH_API_URL is not defined");
+        throw new Error("VITE_WEB_PUBSUB_AUTH_API_URL is not defined");
       }
 
       const response = await fetch(authApiUrl, {
