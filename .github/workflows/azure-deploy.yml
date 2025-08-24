@@ -56,6 +56,7 @@ jobs:
         # Build image
         docker build \
           --build-arg VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
+          --build-arg WEB_PUBSUB_AUTH_API_URL=${{ vars.WEB_PUBSUB_AUTH_API_URL }} \
           --build-arg NODE_ENV=production \
           -t $IMAGE_TAG \
           -t $LATEST_TAG .
@@ -103,7 +104,8 @@ jobs:
             --set-env-vars \
               NODE_ENV=production \
               PORT=3000 \
-              VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }}
+              VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
+              WEB_PUBSUB_AUTH_API_URL=${{ vars.WEB_PUBSUB_AUTH_API_URL }}
         else
           echo "Container App が存在しません。新規作成中..."
           az containerapp create \
@@ -123,7 +125,8 @@ jobs:
             --env-vars \
               NODE_ENV=production \
               PORT=3000 \
-              VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }}
+              VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
+              WEB_PUBSUB_AUTH_API_URL=${{ vars.WEB_PUBSUB_AUTH_API_URL }}
         fi
 
     # Get deployment URL（Container Apps 用）
