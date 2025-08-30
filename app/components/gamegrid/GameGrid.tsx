@@ -2681,7 +2681,7 @@ const GameGrid = () => {
     }
 
     // 接続していない場合は接続を開始
-    if (readyState !== WebSocket.OPEN) {
+    if (readyState !== WebSocket.OPEN && readyState !== WebSocket.CONNECTING) {
       connect();
     }
   }, [readyState, connect, setContextMatchId]);

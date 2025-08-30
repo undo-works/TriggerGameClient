@@ -131,7 +131,7 @@ export default function MatchingPage() {
   // マッチング開始
   useEffect(() => {
     console.log("マッチング開始のチェック:", readyState);
-    if (readyState === WebSocket.OPEN) {
+    if (readyState !== WebSocket.CONNECTING && readyState === WebSocket.OPEN) {
       // マッチング開始メッセージを送信
       sendMessage({
         type: "matchmaking",

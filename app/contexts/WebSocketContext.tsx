@@ -235,7 +235,11 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
       return;
     }
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
       console.log("WebSocket is already connected");
       return;
     }
