@@ -97,9 +97,10 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       }
     );
-  } catch {
+  } catch (error) {
+    const errorMessage = (error instanceof Error) ? error.message : String(error);
     return Response.json(
-      { error: "Failed to negotiate connection" },
+      { error: "Failed to negotiate connection", details: errorMessage },
       { status: 500 }
     );
   }
