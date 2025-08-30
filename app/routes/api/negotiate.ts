@@ -62,6 +62,8 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         }
       );
+    } else {
+      console.log("connectionString", connectionString)
     }
 
     const serviceClient = new WebPubSubServiceClient(connectionString, "triggergame");
@@ -98,6 +100,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     );
   } catch (error) {
+    console.error("Negotiate error:", error);
     const errorMessage = (error instanceof Error) ? error.message : String(error);
     return Response.json(
       { error: "Failed to negotiate connection", details: errorMessage },
