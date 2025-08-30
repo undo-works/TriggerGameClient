@@ -51,21 +51,26 @@ jobs:
     - name: Build and push Docker image
       run: |
         # Generate unique tag
-        IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-        LATEST_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
         
-        # Build image
+        echo "Building image with tag: $IMAGE_TAG"
+        echo "Building image with latest tag: $LATEST_TAG"
+        
+        # Build image with explicit context
         docker build \
-          --build-arg VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
-          --build-arg VITE_WEB_PUBSUB_AUTH_API_URL=${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }} \
-          --build-arg WEB_PUBSUB_CONNECTION_STRING=${{ secrets.WEB_PUBSUB_CONNECTION_STRING }} \
+          --build-arg VITE_WS_SERVER_URL="${{ vars.VITE_WS_SERVER_URL }}" \
+          --build-arg VITE_WEB_PUBSUB_AUTH_API_URL="${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }}" \
+          --build-arg WEB_PUBSUB_CONNECTION_STRING="${{ secrets.WEB_PUBSUB_CONNECTION_STRING }}" \
           --build-arg NODE_ENV=production \
-          -t $IMAGE_TAG \
-          -t $LATEST_TAG .
+          --tag "$IMAGE_TAG" \
+          --tag "$LATEST_TAG" \
+          --file Dockerfile \
+          .
 
         # Push images
-        docker push $IMAGE_TAG
-        docker push $LATEST_TAG
+        docker push "$IMAGE_TAG"
+        docker push "$LATEST_TAG"
         
         # Set output for next step
         echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
