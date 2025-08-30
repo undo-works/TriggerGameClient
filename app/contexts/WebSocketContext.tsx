@@ -1,4 +1,3 @@
-import { useFetcher } from "@remix-run/react";
 import React, {
   createContext,
   useContext,
@@ -9,6 +8,7 @@ import React, {
 } from "react";
 import { TurnCompleteResult } from "~/components/gamegrid/types";
 import { NegotiateError, NegotiateResponse } from "~/routes/api/negotiate";
+import axios from "axios";
 
 /**
  * WebSocketで送信するアクションデータの型定義
@@ -151,77 +151,28 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     );
   };
 
-  const negotiateFetcher = useFetcher<NegotiateResponse | NegotiateError>();
-
   /**
    * Web PubSub 認証API呼び出し（Remix Action経由）
+   * @returns {Promise<string | undefined>} WebSocket接続用のURL（失敗時はundefined）
    */
-  const getWebPubSubUrl = async (): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      // Action を呼び出し
-      negotiateFetcher.submit(
-        {
-          userId: playerId || "anonymous",
-          roles: JSON.stringify([
-            "webpubsub.sendToGroup",
-            "webpubsub.joinLeaveGroup",
-          ]),
-        },
-        {
-          method: "POST",
-          action: "/api/negotiate",
-          encType: "application/json",
-        }
-      );
+  const getWebPubSubUrl = async (): Promise<string | undefined> => {
+    const data = await axios.post<NegotiateResponse | NegotiateError>(
+      "/api/negotiate",
+      {
+        userId: playerId || "anonymous",
+        roles: JSON.stringify([
+          "webpubsub.sendToGroup",
+          "webpubsub.joinLeaveGroup",
+        ]),
+      }
+    );
 
-      // レスポンスを監視
-      const checkResponse = () => {
-        if (negotiateFetcher.state === "idle" && negotiateFetcher.data) {
-          const data = negotiateFetcher.data;
-
-          if ("error" in data) {
-            console.error("Web PubSub 認証エラー:", data.error);
-            reject(new Error(data.error));
-          } else {
-            console.log("Web PubSub 認証成功:", data.url);
-            // ユーザーIDも更新
-            if (data.userId && data.userId !== playerId) {
-              setPlayerId(data.userId);
-              if (typeof window !== "undefined") {
-                localStorage.setItem("playerId", data.userId);
-              }
-            }
-            resolve(data.url);
-          }
-        } else if (negotiateFetcher.state === "idle") {
-          reject(new Error("No response from negotiate API"));
-        } else {
-          // まだ loading 中の場合は再チェック
-          setTimeout(checkResponse, 100);
-        }
-      };
-
-      checkResponse();
-    });
-  };
-
-  /**
-   * WebSocket URL を取得
-   */
-  const getWebSocketUrl = async (): Promise<string | null> => {
-    // ローカル環境の場合
-    // TODO: 不要なら削除する
-    // if (isLocalEnvironment()) {
-    //   return "ws://localhost:8080/";
-    // }
-
-    // 本番環境の場合：Web PubSub を使用
-    try {
-      return await getWebPubSubUrl();
-    } catch (error) {
-      console.error("Web PubSub URL取得失敗:");
-      return null;
+    if ("error" in data.data) {
+      console.error("Web PubSub 認証エラー:", data.data.error);
+      throw new Error(data.data.error);
     }
+
+    return data.data.url;
   };
 
   // WebSocket接続関数
@@ -246,7 +197,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
       setReadyState(WebSocket.CONNECTING);
 
       // 環境に応じてWebSocket URLを取得
-      const wsUrl = await getWebSocketUrl();
+      const wsUrl = await getWebPubSubUrl();
       console.log("WebSocket接続先:", wsUrl);
 
       if (!wsUrl) {

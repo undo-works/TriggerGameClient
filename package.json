@@ -15,6 +15,7 @@
     "@remix-run/node": "^2.16.8",
     "@remix-run/react": "^2.16.8",
     "@remix-run/serve": "^2.16.8",
+    "axios": "^1.11.0",
     "isbot": "^4.1.0",
     "phaser": "^3.90.0",
     "react": "^18.2.0",

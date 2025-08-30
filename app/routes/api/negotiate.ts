@@ -62,8 +62,6 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         }
       );
-    } else {
-      console.log("connectionString", connectionString)
     }
 
     const serviceClient = new WebPubSubServiceClient(connectionString, "triggergame");
