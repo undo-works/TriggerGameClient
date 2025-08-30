@@ -208,7 +208,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
   /**
    * WebSocket URL を取得
    */
-  const getWebSocketUrl = async (): Promise<string> => {
+  const getWebSocketUrl = async (): Promise<string | null> => {
     // ローカル環境の場合
     // TODO: 不要なら削除する
     // if (isLocalEnvironment()) {
@@ -219,11 +219,8 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     try {
       return await getWebPubSubUrl();
     } catch (error) {
-      console.error("Web PubSub URL取得失敗、フォールバックURLを使用:", error);
-
-      // フォールバック：従来の方式
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${protocol}//${window.location.hostname}:8080/`;
+      console.error("Web PubSub URL取得失敗:");
+      return null;
     }
   };
 
@@ -251,6 +248,11 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
       // 環境に応じてWebSocket URLを取得
       const wsUrl = await getWebSocketUrl();
       console.log("WebSocket接続先:", wsUrl);
+
+      if (!wsUrl) {
+        console.error("WebSocket URLが取得できませんでした");
+        return;
+      }
 
       wsRef.current = new WebSocket(wsUrl);
 
