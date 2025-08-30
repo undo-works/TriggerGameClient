@@ -1,3 +1,4 @@
+import { useFetcher } from "@remix-run/react";
 import React, {
   createContext,
   useContext,
@@ -7,6 +8,7 @@ import React, {
   ReactNode,
 } from "react";
 import { TurnCompleteResult } from "~/components/gamegrid/types";
+import { NegotiateError, NegotiateResponse } from "~/routes/api/negotiate";
 
 /**
  * WebSocketで送信するアクションデータの型定義
@@ -56,14 +58,6 @@ export interface WebSocketMessage {
   status?: string; // for matchmaking_result status (waiting, matched, etc.)
   /** Web PubSub イベント名 */
   event?: string;
-}
-
-/**
- * Web PubSub 認証レスポンスの型定義
- */
-interface PubSubAuthResponse {
-  url: string;
-  accessToken?: string;
 }
 
 /**
@@ -157,41 +151,58 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     );
   };
 
+  const negotiateFetcher = useFetcher<NegotiateResponse | NegotiateError>();
+
   /**
-   * Web PubSub 認証API呼び出し
+   * Web PubSub 認証API呼び出し（Remix Action経由）
    */
   const getWebPubSubUrl = async (): Promise<string> => {
-    try {
-      // 認証APIエンドポイント
-      const authApiUrl =
-        "https://trigger-game-ws-functions-prod.azurewebsites.net/api/negotiate";
-      if (!authApiUrl) {
-        throw new Error("VITE_WEB_PUBSUB_AUTH_API_URL is not defined");
-      }
-
-      const response = await fetch(authApiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+    return new Promise((resolve, reject) => {
+      // Action を呼び出し
+      negotiateFetcher.submit(
+        {
           userId: playerId || "anonymous",
-          roles: ["webpubsub.sendToGroup", "webpubsub.joinLeaveGroup"],
-        }),
-      });
+          roles: JSON.stringify([
+            "webpubsub.sendToGroup",
+            "webpubsub.joinLeaveGroup",
+          ]),
+        },
+        {
+          method: "POST",
+          action: "/api/negotiate",
+          encType: "application/json",
+        }
+      );
 
-      if (!response.ok) {
-        throw new Error(`認証API呼び出し失敗: ${response.status}`);
-      }
+      // レスポンスを監視
+      const checkResponse = () => {
+        if (negotiateFetcher.state === "idle" && negotiateFetcher.data) {
+          const data = negotiateFetcher.data;
 
-      const authData: PubSubAuthResponse = await response.json();
-      console.log("Web PubSub 認証成功:", authData.url);
+          if ("error" in data) {
+            console.error("Web PubSub 認証エラー:", data.error);
+            reject(new Error(data.error));
+          } else {
+            console.log("Web PubSub 認証成功:", data.url);
+            // ユーザーIDも更新
+            if (data.userId && data.userId !== playerId) {
+              setPlayerId(data.userId);
+              if (typeof window !== "undefined") {
+                localStorage.setItem("playerId", data.userId);
+              }
+            }
+            resolve(data.url);
+          }
+        } else if (negotiateFetcher.state === "idle") {
+          reject(new Error("No response from negotiate API"));
+        } else {
+          // まだ loading 中の場合は再チェック
+          setTimeout(checkResponse, 100);
+        }
+      };
 
-      return authData.url;
-    } catch (error) {
-      console.error("Web PubSub 認証エラー:", error);
-      throw error;
-    }
+      checkResponse();
+    });
   };
 
   /**
@@ -199,9 +210,10 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
    */
   const getWebSocketUrl = async (): Promise<string> => {
     // ローカル環境の場合
-    if (isLocalEnvironment()) {
-      return "ws://localhost:8080/";
-    }
+    // TODO: 不要なら削除する
+    // if (isLocalEnvironment()) {
+    //   return "ws://localhost:8080/";
+    // }
 
     // 本番環境の場合：Web PubSub を使用
     try {

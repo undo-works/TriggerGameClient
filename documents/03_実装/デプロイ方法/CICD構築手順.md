@@ -29,15 +29,16 @@ az provider register --namespace Microsoft.App
 
 GitHub リポジトリの **Settings > Secrets and variables > Actions > Repository secrets** で以下のシークレットを追加：
 
-| Secret名 | 値 |
-|---------|---|
-| `AZURE_CREDENTIALS` | サービスプリンシパルのJSON全体 |
-| `AZURE_REGISTRY_LOGIN_SERVER` | `triggergameacr.azurecr.io` |
-| `AZURE_REGISTRY_USERNAME` | ACRのユーザー名 |
-| `AZURE_REGISTRY_PASSWORD` | ACRのパスワード |
-| `AZURE_RESOURCE_GROUP` | `trigger-game-rg` |
-| `AZURE_CONTAINER_NAME` | `trigger-game-app` |
-| `AZURE_CONTAINER_ENV_NAME` | `trigger-game-env` |
+| Secret名 | 値 | 備考 |
+|---------|---|------|
+| `AZURE_CREDENTIALS` | サービスプリンシパルのJSON全体 | |
+| `AZURE_REGISTRY_LOGIN_SERVER` | `triggergameacr.azurecr.io` | |
+| `AZURE_REGISTRY_USERNAME` | ACRのユーザー名 | |
+| `AZURE_REGISTRY_PASSWORD` | ACRのパスワード | |
+| `AZURE_RESOURCE_GROUP` | `trigger-game-rg` | |
+| `AZURE_CONTAINER_NAME` | `trigger-game-app` | |
+| `AZURE_CONTAINER_ENV_NAME` | `trigger-game-env` | |
+| `WEB_PUBSUB_CONNECTION_STRING` | Azure Web PubSub の接続文字列 | Web PubSubページの設定 > キー > 接続文字列 |
 
 ## 3. 環境変数の設定
 

@@ -12,6 +12,7 @@ env:
   IMAGE_NAME: trigger-game
   VITE_WS_SERVER_URL: ${{ vars.VITE_WS_SERVER_URL }}
   VITE_WEB_PUBSUB_AUTH_API_URL: ${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }}
+  WEB_PUBSUB_CONNECTION_STRING: ${{ secrets.WEB_PUBSUB_CONNECTION_STRING }}
 
 jobs:
   build-and-deploy:
@@ -57,6 +58,7 @@ jobs:
         docker build \
           --build-arg VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
           --build-arg VITE_WEB_PUBSUB_AUTH_API_URL=${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }} \
+          --build-arg WEB_PUBSUB_CONNECTION_STRING=${{ secrets.WEB_PUBSUB_CONNECTION_STRING }} \
           --build-arg NODE_ENV=production \
           -t $IMAGE_TAG \
           -t $LATEST_TAG .
@@ -105,7 +107,8 @@ jobs:
               NODE_ENV=production \
               PORT=3000 \
               VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
-              VITE_WEB_PUBSUB_AUTH_API_URL=${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }}
+              VITE_WEB_PUBSUB_AUTH_API_URL=${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }} \
+              WEB_PUBSUB_CONNECTION_STRING=${{ secrets.WEB_PUBSUB_CONNECTION_STRING }}
         else
           echo "Container App が存在しません。新規作成中..."
           az containerapp create \
@@ -126,7 +129,8 @@ jobs:
               NODE_ENV=production \
               PORT=3000 \
               VITE_WS_SERVER_URL=${{ vars.VITE_WS_SERVER_URL }} \
-              VITE_WEB_PUBSUB_AUTH_API_URL=${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }}
+              VITE_WEB_PUBSUB_AUTH_API_URL=${{ vars.VITE_WEB_PUBSUB_AUTH_API_URL }} \
+              WEB_PUBSUB_CONNECTION_STRING=${{ secrets.WEB_PUBSUB_CONNECTION_STRING }}
         fi
 
     # Get deployment URL（Container Apps 用）

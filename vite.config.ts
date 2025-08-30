@@ -18,7 +18,15 @@ export default defineConfig({
         v3_singleFetch: true,
         v3_lazyRouteDiscovery: true,
       },
-    }),
+      routes(defineRoutes) {
+        return defineRoutes((route) => {
+          route("api", "routes/api/index.ts", () => {
+            route("negotiate", "routes/api/negotiate.ts", { index: true });
+          });
+        });
+      },
+    },
+    ),
     tsconfigPaths(),
   ],
   envPrefix: "VITE_",
