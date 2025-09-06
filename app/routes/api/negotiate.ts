@@ -36,7 +36,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (process.env.NODE_ENV === "development") {
       return Response.json(
         {
-          url: "ws://localhost:5173",
+          url: "ws://localhost:8080",
           userId: `dev_user_${Date.now()}`
         },
         {
@@ -64,7 +64,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const serviceClient = new WebPubSubServiceClient(connectionString, "triggergame");
+    const serviceClient = new WebPubSubServiceClient(connectionString, "gameHub");
 
     let body: NegotiateRequest | null = null;
     if (request.method === "POST") {
