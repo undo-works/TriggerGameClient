@@ -212,20 +212,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
         setConnectionStatus("connected");
         setReconnectAttempts(0);
 
-        // Web PubSub の場合は初期化メッセージを送信
-        if (!isLocalEnvironment()) {
-          // Web PubSub グループに参加
-          const joinMessage = {
-            type: "joinGroup",
-            group: "game-lobby",
-            userId: playerId || "anonymous",
-          };
-
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify(joinMessage));
-          }
-        }
-
         // 実際のWebSocketの状態が確実にOPENになるまで待つ
         const checkReadyState = () => {
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -330,6 +316,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     }
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log("WebSocket接続を切断します");
       wsRef.current.close(1000, "Manual disconnect");
     }
 
