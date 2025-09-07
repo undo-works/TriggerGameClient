@@ -78,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    const userId = body?.userId || `user_${Date.now()}`;
+    const userId = body?.userId;
     const token = await serviceClient.getClientAccessToken({
       userId,
       expirationTimeInMinutes: 60,
@@ -86,7 +86,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     return Response.json(
-      { url: token.url, userId },
+      { url: token.url, userId: userId },
       {
         status: 200,
         headers: {

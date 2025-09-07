@@ -138,20 +138,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
   }, []);
 
   /**
-   * 環境判定関数
-   */
-  const isLocalEnvironment = (): boolean => {
-    if (typeof window === "undefined") return false;
-
-    const hostname = window.location.hostname;
-    return (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname.includes("localhost")
-    );
-  };
-
-  /**
    * Web PubSub 認証API呼び出し（Remix Action経由）
    * @returns {Promise<string | undefined>} WebSocket接続用のURL（失敗時はundefined）
    */
@@ -159,7 +145,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     const data = await axios.post<NegotiateResponse | NegotiateError>(
       "/api/negotiate",
       {
-        userId: playerId || "anonymous",
+        userId: playerId,
         roles: JSON.stringify([
           "webpubsub.sendToGroup",
           "webpubsub.joinLeaveGroup",
@@ -235,14 +221,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
         try {
           const data: WebSocketMessage = JSON.parse(event.data);
           console.log("WebSocketメッセージ受信:", data);
-
-          // Web PubSub の場合のメッセージ処理
-          if (!isLocalEnvironment()) {
-            // Web PubSub からのメッセージは少し異なる形式の可能性があるため変換
-            if (data.type === "system" && data.event === "connected") {
-              data.type = "connected";
-            }
-          }
 
           // コネクションが成立
           if (data.type === "connected") {
@@ -342,25 +320,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
       readyState === WebSocket.OPEN &&
       wsRef.current.readyState === WebSocket.OPEN
     ) {
-      // プレイヤーIDとマッチIDを自動的に追加
-      // const messageWithIds = isLocalEnvironment()
-      //   ? {
-      //       ...message,
-      //       playerId: message.playerId || playerId,
-      //       matchId: message.matchId || matchId,
-      //     }
-      //   : {
-      //       // Web PubSub の場合はメッセージ形式を調整
-      //       type: "sendToGroup",
-      //       group: "game-lobby",
-      //       dataType: "json",
-      //       data: {
-      //         ...message,
-      //         playerId: message.playerId || playerId,
-      //         matchId: message.matchId || matchId,
-      //       },
-      //     };
-
       const messageWithIds = {
         ...message,
         playerId: message.playerId || playerId,
