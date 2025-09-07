@@ -343,23 +343,29 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
       wsRef.current.readyState === WebSocket.OPEN
     ) {
       // プレイヤーIDとマッチIDを自動的に追加
-      const messageWithIds = isLocalEnvironment()
-        ? {
-            ...message,
-            playerId: message.playerId || playerId,
-            matchId: message.matchId || matchId,
-          }
-        : {
-            // Web PubSub の場合はメッセージ形式を調整
-            type: "sendToGroup",
-            group: "game-lobby",
-            dataType: "json",
-            data: {
-              ...message,
-              playerId: message.playerId || playerId,
-              matchId: message.matchId || matchId,
-            },
-          };
+      // const messageWithIds = isLocalEnvironment()
+      //   ? {
+      //       ...message,
+      //       playerId: message.playerId || playerId,
+      //       matchId: message.matchId || matchId,
+      //     }
+      //   : {
+      //       // Web PubSub の場合はメッセージ形式を調整
+      //       type: "sendToGroup",
+      //       group: "game-lobby",
+      //       dataType: "json",
+      //       data: {
+      //         ...message,
+      //         playerId: message.playerId || playerId,
+      //         matchId: message.matchId || matchId,
+      //       },
+      //     };
+
+      const messageWithIds = {
+        ...message,
+        playerId: message.playerId || playerId,
+        matchId: message.matchId || matchId,
+      };
 
       console.log("WebSocketメッセージ送信:", messageWithIds);
       wsRef.current.send(JSON.stringify(messageWithIds));
