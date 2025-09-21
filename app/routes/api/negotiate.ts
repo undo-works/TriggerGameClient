@@ -1,7 +1,6 @@
 import { ActionFunctionArgs } from "@remix-run/node";
 import { WebPubSubServiceClient } from "@azure/web-pubsub";
 import { corsHeaders } from "./utils/header";
-import "dotenv";
 
 /**
  * Web Pubsubの認証を行い、クライアント接続用のURLを発行するリクエスト
