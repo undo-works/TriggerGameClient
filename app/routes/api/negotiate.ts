@@ -1,6 +1,7 @@
 import { ActionFunctionArgs } from "@remix-run/node";
 import { WebPubSubServiceClient } from "@azure/web-pubsub";
 import { corsHeaders } from "./utils/header";
+import "dotenv";
 
 /**
  * Web Pubsubの認証を行い、クライアント接続用のURLを発行するリクエスト
@@ -33,23 +34,6 @@ export interface NegotiateError {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    if (process.env.NODE_ENV === "development") {
-      return Response.json(
-        {
-          url: "ws://localhost:8080",
-          userId: `dev_user_${Date.now()}`
-        },
-        {
-          status: 200,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    }
     const connectionString = process.env.WEB_PUBSUB_CONNECTION_STRING;
     if (!connectionString) {
       return Response.json(
@@ -64,7 +48,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const serviceClient = new WebPubSubServiceClient(connectionString, "gameHub");
+    const serviceClient = new WebPubSubServiceClient(connectionString, process.env.HUB_NAME ?? "gameHub");
 
     let body: NegotiateRequest | null = null;
     if (request.method === "POST") {

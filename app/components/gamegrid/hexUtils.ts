@@ -1,42 +1,37 @@
-import type { Position, PixelPosition, GridConfig } from './types';
+import type { Position, GridConfig } from './types';
 
 /**
  * 六角形グリッド関連のユーティリティ関数
  */
 export class HexUtils {
-  constructor(private config: GridConfig) {}
-
-  /**
-   * 余白を初期化する（画面サイズの半分程度）
-   */
-  initializeMargins(camera: Phaser.Cameras.Scene2D.Camera): void {
-    // ゲームのキャンバスサイズを取得
-    const gameWidth = camera.width;
-    const gameHeight = camera.height;
-    
-    // 画面の横幅/縦幅の半分程度の余白を設定
-    this.config.marginLeft = gameWidth * 0.5;
-    this.config.marginTop = gameHeight * 0.5;
-  }
+  constructor(private config: GridConfig) { }
 
   /**
    * 敵のアクション用に座標を逆転させる
+   * @param position 元の座標
+   * @returns 逆転された座標
    */
-  invertPosition(position: Position): Position {
+  invertPosition(position: { col: number; row: number }): {
+    col: number;
+    row: number;
+  } {
     // グリッドの最大サイズを取得
     const maxCol = this.config.gridWidth - 1;
     const maxRow = this.config.gridHeight - 1;
-    
+
     return {
       col: maxCol - position.col,
-      row: maxRow - position.row
+      row: maxRow - position.row,
     };
   }
 
   /**
    * 六角形グリッドの座標を計算する
+   * @param col 列
+   * @param row 行
+   * @return ピクセル座標
    */
-  getHexPosition(col: number, row: number): PixelPosition {
+  getHexPosition(col: number, row: number): { x: number; y: number } {
     const x = col * this.config.hexWidth * 0.75 + this.config.hexRadius + this.config.marginLeft;
     const y =
       row * this.config.hexHeight +
@@ -47,9 +42,31 @@ export class HexUtils {
   }
 
   /**
-   * ピクセル座標を六角形グリッド座標に変換
+   * 六角形の頂点座標を計算する
+   * @param centerX 中心X座標
+   * @param centerY 中心Y座標
+   * @returns 頂点座標の配列
    */
-  pixelToHex(x: number, y: number, camera: Phaser.Cameras.Scene2D.Camera): Position {
+  getHexVertices(centerX: number, centerY: number): number[] {
+    const vertices: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i;
+      const x = centerX + this.config.hexRadius * Math.cos(angle);
+      const y = centerY + this.config.hexRadius * Math.sin(angle);
+      vertices.push(x, y);
+    }
+    return vertices;
+  }
+
+
+  /**
+   * ピクセル座標から六角形グリッド座標に変換する（カメラのズーム・スクロール対応）
+   * @param x ピクセルX座標
+   * @param y ピクセルY座標
+   * @param camera Phaserのカメラオブジェクト
+   * @returns {col, row} グリッド座標
+   */
+  pixelToHex(x: number, y: number, camera: Phaser.Cameras.Scene2D.Camera): { col: number; row: number } {
     // カメラのズームとスクロールを考慮した座標変換
     const worldX = (x + camera.scrollX) / camera.zoom;
     const worldY = (y + camera.scrollY) / camera.zoom;
@@ -64,25 +81,14 @@ export class HexUtils {
   }
 
   /**
-   * 六角形の頂点座標を計算する
-   */
-  getHexVertices(centerX: number, centerY: number): number[] {
-    const vertices: number[] = [];
-    for (let i = 0; i < 6; i++) {
-      const angle = (Math.PI / 3) * i;
-      const x = centerX + this.config.hexRadius * Math.cos(angle);
-      const y = centerY + this.config.hexRadius * Math.sin(angle);
-      vertices.push(x, y);
-    }
-    return vertices;
-  }
-
-  /**
    * 六角形グリッドでの隣接セルを取得
+   * @param col 中心の列
+   * @param row 中心の行
+   * @returns 隣接するセルの座標配列
    */
-  getHexNeighbors(col: number, row: number): Position[] {
+  private getHexNeighbors(col: number, row: number): Position[] {
     const neighbors: Position[] = [];
-    
+
     // 偶数列と奇数列で隣接パターンが異なる
     if (col % 2 === 0) {
       // 偶数列の場合
@@ -105,82 +111,76 @@ export class HexUtils {
         { col: col + 1, row: row + 1 }  // 右下
       );
     }
-    
+
     // グリッド境界内のセルのみ返す
-    return neighbors.filter(neighbor => 
+    return neighbors.filter(neighbor =>
       neighbor.col >= 0 && neighbor.col < this.config.gridWidth &&
       neighbor.row >= 0 && neighbor.row < this.config.gridHeight
     );
   }
 
   /**
-   * 指定位置から隣接する六角形を取得
+   * 六角形グリッドの隣接する6マスの座標を取得する
+   * @param col 中心の列
+   * @param row 中心の行
+   * @param activeCount キャラクターの残り行動力
+   * @returns 移動可能なマスの座標と移動後の残り行動力の配列
    */
-  getAdjacentHexes(col: number, row: number): Position[] {
-    return this.getHexNeighbors(col, row);
-  }
+  getAdjacentHexes(
+    col: number,
+    row: number,
+    activeCount: number
+  ): { col: number; row: number; remainActiveCount: number }[] {
+    if (activeCount <= 0) {
+      return [];
+    }
 
-  /**
-   * マウス座標から角度を計算
-   */
-  calculateMouseAngle(
-    centerX: number,
-    centerY: number,
-    mouseX: number,
-    mouseY: number,
-    camera: Phaser.Cameras.Scene2D.Camera
-  ): number {
-    const worldMouseX = (mouseX + camera.scrollX) / camera.zoom;
-    const worldMouseY = (mouseY + camera.scrollY) / camera.zoom;
+    const reachableHexes = new Map<string, number>(); // key: "col,row", value: remainingMoves
+    const queue: Array<{
+      position: { col: number; row: number };
+      remainingMoves: number;
+    }> = [];
 
-    const dx = worldMouseX - centerX;
-    const dy = worldMouseY - centerY;
-    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-    if (angle < 0) angle += 360;
-    return angle;
-  }
+    // 開始位置を追加（現在位置は移動可能なマスに含めない）
+    queue.push({ position: { col, row }, remainingMoves: activeCount });
+    reachableHexes.set(`${col},${row}`, activeCount);
 
-  /**
-   * 行動履歴から移動経路を計算する（六角形グリッド用）
-   */
-  calculateMovementPath(startPosition: Position, endPosition: Position): Position[] {
-    const path: Position[] = [];
-    let currentCol = startPosition.col;
-    let currentRow = startPosition.row;
+    while (queue.length > 0) {
+      const { position, remainingMoves } = queue.shift()!;
 
-    // 六角形グリッドの最短経路計算
-    while (currentCol !== endPosition.col || currentRow !== endPosition.row) {
-      const neighbors = this.getHexNeighbors(currentCol, currentRow);
-      
-      // 目標に最も近い隣接セルを選択
-      let bestNeighbor = neighbors[0];
-      let bestDistance = Infinity;
-      
-      for (const neighbor of neighbors) {
-        // マンハッタン距離で近似
-        const distance = Math.abs(neighbor.col - endPosition.col) + Math.abs(neighbor.row - endPosition.row);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestNeighbor = neighbor;
+      if (remainingMoves > 0) {
+        // 隣接するマスを取得
+        const neighbors = this.getHexNeighbors(position.col, position.row);
+
+        for (const neighbor of neighbors) {
+          const key = `${neighbor.col},${neighbor.row}`;
+          const newRemainingMoves = remainingMoves - 1;
+
+          // まだ訪問していないマス、またはより多くの行動力で到達できる場合
+          if (
+            !reachableHexes.has(key) ||
+            reachableHexes.get(key)! < newRemainingMoves
+          ) {
+            reachableHexes.set(key, newRemainingMoves);
+            queue.push({
+              position: neighbor,
+              remainingMoves: newRemainingMoves,
+            });
+          }
         }
-      }
-      
-      if (!bestNeighbor) {
-        console.warn("移動可能な隣接セルが見つかりません");
-        break;
-      }
-      
-      currentCol = bestNeighbor.col;
-      currentRow = bestNeighbor.row;
-      path.push({ col: currentCol, row: currentRow });
-
-      // 無限ループ防止（最大移動数制限）
-      if (path.length > 50) {
-        console.warn("移動経路計算で無限ループが検出されました");
-        break;
       }
     }
 
-    return path;
+    // 開始位置を除いて結果を返す
+    const result: { col: number; row: number; remainActiveCount: number }[] =
+      [];
+    for (const [key, remainingMoves] of reachableHexes.entries()) {
+      const [c, r] = key.split(",").map(Number);
+      // 開始位置は除外
+      if (c !== col || r !== row) {
+        result.push({ col: c, row: r, remainActiveCount: remainingMoves });
+      }
+    }
+    return result;
   }
 }

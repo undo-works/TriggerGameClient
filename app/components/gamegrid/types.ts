@@ -12,7 +12,7 @@ export interface PixelPosition {
   y: number;
 }
 
-export interface CharacterDirection {
+export interface TriggerDirection {
   main: number;
   sub: number;
 }
@@ -39,11 +39,29 @@ export interface GridConfig {
 export interface CharacterState {
   positions: Map<Phaser.GameObjects.Image, Position>;
   ids: Map<Phaser.GameObjects.Image, string>;
-  directions: Map<Phaser.GameObjects.Image, CharacterDirection>;
+  directions: Map<Phaser.GameObjects.Image, TriggerDirection>;
   actionPoints: Map<Phaser.GameObjects.Image, number>;
   actionCompletedTexts: Map<Phaser.GameObjects.Image, Phaser.GameObjects.Text>;
   combatStats: Map<Phaser.GameObjects.Image, CombatStats>;
   triggerStats: Map<Phaser.GameObjects.Image, { main: TriggerStats; sub: TriggerStats }>;
+}
+
+/**
+ * キャラクターごとの状態管理の型定義
+ */
+export interface CharacterImageState {
+  /** Phaserのゲームオブジェクト */
+  image: Phaser.GameObjects.Image;
+  /** キャラクターの座標マス */
+  position: Position;
+  /** キャラクターのID */
+  id: string;
+  /** トリガーの向き */
+  direction: TriggerDirection;
+  /** 残りの行動力 */
+  actionPoints: number;
+  /** 行動設定完了表示 */
+  completeText: Phaser.GameObjects.Text | null;
 }
 
 export interface TriggerState {
