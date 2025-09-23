@@ -7,13 +7,15 @@ import {
 } from "../../contexts/WebSocketContext";
 import { HexUtils } from "./hexUtils";
 import type {
-  CharacterImageState,
   CombatResult,
   CombatStepResult,
   StepCharacterResult,
   TurnCompleteResult,
 } from "./types";
 import { playerCharacterKeys, playerPositions } from "~/utils/CharacterConfig";
+import { CharacterManager } from "./characterManager";
+import { CharacterImageState } from "~/entities/CharacterImageState";
+import { PlayerCharacterState } from "~/entities/PlayerCharacterState";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -38,12 +40,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     // Phaserオブジェクト
     private hoveredCell: { x: number; y: number } | null = null; // マウスでホバーしているセル
     private cellHighlight!: Phaser.GameObjects.Graphics; // セルのハイライト表示用
-    private playerCharacters: CharacterImageState[] = []; // 自分のキャラクター
-    private enemyCharacters: CharacterImageState[] = []; // 相手のキャラクター
 
-    // キャラクター選択・移動関連
-    private selectedCharacter: CharacterImageState | null = null; // 選択されたキャラクター
-    private movableHexes: Phaser.GameObjects.Graphics[] = []; // 移動可能な六角形のハイライト
+    /** キャラクター管理 */
+    private characterManager: CharacterManager = new CharacterManager();
 
     // トリガー設定フェーズ
     private triggerSettingMode: boolean = false; // トリガー設定モード
@@ -133,37 +132,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 画面の横幅/縦幅の半分程度の余白を設定
       this.marginLeft = gameWidth * 0.5;
       this.marginTop = gameHeight * 0.5;
-    }
-
-    /**
-     * 指定された位置にキャラクターがいるかチェックする
-     * @param col 列
-     * @param row 行
-     * @returns キャラクターがいる場合はそのキャラクター、いない場合はnull
-     */
-    private getCharacterAt(
-      col: number,
-      row: number
-    ): CharacterImageState | null {
-      // プレイヤーキャラクターがマスにいるかチェック
-      for (const characterState of this.playerCharacters) {
-        if (
-          characterState.position.col === col &&
-          characterState.position.row === row
-        ) {
-          return characterState;
-        }
-      }
-      // 敵キャラクターがマスにいるかチェック
-      for (const characterState of this.enemyCharacters) {
-        if (
-          characterState.position.col === col &&
-          characterState.position.row === row
-        ) {
-          return characterState;
-        }
-      }
-      return null;
     }
 
     /**
@@ -460,12 +428,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         // トリガー扇形をドラッグ中の場合
         if (
           this.isDraggingTrigger &&
-          this.selectedCharacter &&
+          this.characterManager.selectedCharacter &&
           this.triggerFan
         ) {
           const centerPos = this.hexUtils.getHexPosition(
-            this.selectedCharacter.position.col,
-            this.selectedCharacter.position.row
+            this.characterManager.selectedCharacter.position.col,
+            this.characterManager.selectedCharacter.position.row
           );
           const newAngle = this.calculateMouseAngle(
             centerPos.x,
@@ -525,7 +493,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         if (
           this.triggerSettingMode &&
           this.triggerFan &&
-          this.selectedCharacter
+          this.characterManager.selectedCharacter
         ) {
           this.isDraggingTrigger = true;
           return;
@@ -546,16 +514,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           hexCoord.row < this.gridHeight
         ) {
           // そのマスにキャラクターがいるかチェック
-          const characterAtPosition = this.getCharacterAt(
-            hexCoord.col,
-            hexCoord.row
-          );
+          const characterAtPosition =
+            this.characterManager.getPlayerCharacterAt(
+              hexCoord.col,
+              hexCoord.row
+            );
 
-          if (
-            characterAtPosition &&
-            this.playerCharacters.includes(characterAtPosition)
-          ) {
-            if (characterAtPosition.image === this.selectedCharacter?.image) {
+          if (characterAtPosition) {
+            if (
+              characterAtPosition === this.characterManager.selectedCharacter
+            ) {
               // 既に選択されているキャラクターを再度クリック：トリガー設定モードに入る
               console.log(
                 `選択中のキャラクターをクリック: トリガー設定モードに入ります`
@@ -571,15 +539,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
                 `キャラクターを選択: (${hexCoord.col}, ${hexCoord.row})`
               );
             }
-          } else if (this.selectedCharacter) {
+          } else if (this.characterManager.selectedCharacter) {
             // キャラクターが選択されている状態で空のマスをクリックしたパターン
             const actionPoints =
-              this.playerCharacters.find(
-                (char) => char.image === this.selectedCharacter?.image
+              this.characterManager.playerCharacters.find(
+                (char) =>
+                  char.image === this.characterManager.selectedCharacter?.image
               )?.actionPoints || 0;
             const adjacentHexes = this.hexUtils.getAdjacentHexes(
-              this.selectedCharacter.position.col,
-              this.selectedCharacter.position.row,
+              this.characterManager.selectedCharacter.position.col,
+              this.characterManager.selectedCharacter.position.row,
               actionPoints
             );
 
@@ -588,10 +557,14 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
               (hex) => hex.col === hexCoord.col && hex.row === hexCoord.row
             );
 
-            if (isMovable && !characterAtPosition) {
-              // 移動可能マスをクリック：キャラクターを移動
-              this.moveCharacter(hexCoord.col, hexCoord.row);
+            // 移動前のポジションを保存
+            this.characterManager.beforePosition =
+              this.characterManager.selectedCharacter.position;
 
+            if (isMovable && !characterAtPosition) {
+              this.moveCharacter(hexCoord.col, hexCoord.row);
+              // 移動後にトリガー設定モードに入る
+              this.startTriggerSetting();
               // 行動力を消費
               this.consumeActionPoint(isMovable.remainActiveCount);
             } else {
@@ -628,7 +601,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private selectCharacter(character: Phaser.GameObjects.Image) {
       // 行動力をチェック
-      const selectedCharacter = this.findCharacterByImage(character);
+      const selectedCharacter =
+        this.characterManager.findPlayerCharacterByImage(character);
       if (selectedCharacter && selectedCharacter.actionPoints <= 0) {
         console.log("このキャラクターは既に行動が完了しています。");
         return;
@@ -638,9 +612,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.clearSelection();
 
       // 新しいキャラクターを選択
-      this.selectedCharacter = selectedCharacter;
+      this.characterManager.selectedCharacter = selectedCharacter;
 
-      if (this.selectedCharacter) {
+      if (this.characterManager.selectedCharacter) {
         // 選択されたキャラクターを強調表示
         character.setTint(0xffff00); // 黄色で強調
 
@@ -649,8 +623,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
         // React側にキャラクター選択を通知
         notifyCharacterSelection(
-          this.selectedCharacter.id,
-          this.selectedCharacter.actionPoints
+          this.characterManager.selectedCharacter.id,
+          this.characterManager.selectedCharacter.actionPoints
         );
       }
     }
@@ -659,29 +633,30 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * 移動可能な六角形マスを表示する
      */
     private showMovableHexes() {
-      if (!this.selectedCharacter) {
+      if (!this.characterManager.selectedCharacter) {
         console.log(
           "キャラクターが選択されていません。",
-          this.selectedCharacter
+          this.characterManager.selectedCharacter
         );
         return;
       }
 
       // 前回の移動可能マスを削除
-      this.movableHexes.forEach((hex) => hex.destroy());
-      this.movableHexes = [];
+      this.characterManager.movableHexes.forEach((hex) => hex.destroy());
+      this.characterManager.movableHexes = [];
 
-      const selectedCharacter = this.findCharacterByImage(
-        this.selectedCharacter.image
-      );
+      const selectedCharacter =
+        this.characterManager.findPlayerCharacterByImage(
+          this.characterManager.selectedCharacter.image
+        );
       if (!selectedCharacter) return;
 
       // 行動力をチェック
       const actionPoints = selectedCharacter.actionPoints || 0;
 
       const adjacentHexes = this.hexUtils.getAdjacentHexes(
-        this.selectedCharacter.position.col,
-        this.selectedCharacter.position.row,
+        this.characterManager.selectedCharacter.position.col,
+        this.characterManager.selectedCharacter.position.row,
         actionPoints
       );
 
@@ -708,13 +683,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       currentHex.strokePath();
 
       currentHex.setDepth(0.8); // キャラクターより後ろ、背景より前
-      this.movableHexes.push(currentHex);
+      this.characterManager.movableHexes.push(currentHex);
 
       // 隣接する6マスに緑色のハイライトを表示（行動力が残っている場合のみ）
       if (actionPoints > 0) {
         adjacentHexes.forEach((hex) => {
           // そのマスに他のキャラクターがいない場合のみ移動可能
-          if (!this.getCharacterAt(hex.col, hex.row)) {
+          if (!this.characterManager.isCharacterAt(hex.col, hex.row)) {
             const pos = this.hexUtils.getHexPosition(hex.col, hex.row);
 
             const movableHex = this.add.graphics();
@@ -734,7 +709,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             movableHex.setDepth(0.8); // キャラクターより後ろ、背景より前
 
             // 移動可能マスのリストに追加
-            this.movableHexes.push(movableHex);
+            this.characterManager.movableHexes.push(movableHex);
           }
         });
       }
@@ -745,18 +720,22 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private clearSelection() {
       // 選択されたキャラクターの色を元に戻す
-      if (this.selectedCharacter) {
+      if (this.characterManager.selectedCharacter) {
         // プレイヤーキャラクターか敵キャラクターかで色を分ける
-        if (this.playerCharacters.includes(this.selectedCharacter)) {
-          this.selectedCharacter.image.setTint(0xadd8e6); // 薄い青色
+        if (
+          this.characterManager.playerCharacters.includes(
+            this.characterManager.selectedCharacter
+          )
+        ) {
+          this.characterManager.selectedCharacter.image.setTint(0xadd8e6); // 薄い青色
         } else {
-          this.selectedCharacter.image.setTint(0xffb6c1); // 薄い赤色
+          this.characterManager.selectedCharacter.image.setTint(0xffb6c1); // 薄い赤色
         }
       }
 
       // 移動可能マスを削除
-      this.movableHexes.forEach((hex) => hex.destroy());
-      this.movableHexes = [];
+      this.characterManager.movableHexes.forEach((hex) => hex.destroy());
+      this.characterManager.movableHexes = [];
 
       // トリガー表示をクリア
       this.clearAllTriggerDisplays();
@@ -766,7 +745,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.triggerSettingType = null;
 
       // 選択状態をリセット
-      this.selectedCharacter = null;
+      this.characterManager.selectedCharacter = null;
 
       // React側にキャラクター選択解除を通知
       notifyCharacterSelection(null, 0);
@@ -778,33 +757,24 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @param targetRow 移動先の行
      */
     private moveCharacter(targetCol: number, targetRow: number) {
-      if (!this.selectedCharacter) return;
+      if (!this.characterManager.selectedCharacter) return;
 
       // 移動先の位置を計算
       const targetPosition = this.hexUtils.getHexPosition(targetCol, targetRow);
 
       // キャラクターを移動
-      this.selectedCharacter.image.setPosition(
+      this.characterManager.selectedCharacter.image.setPosition(
         targetPosition.x,
         targetPosition.y
       );
 
       // // キャラクターの位置情報を更新（移動後の位置）
-      this.findCharacterByImage(this.selectedCharacter.image)!.position = {
+      this.characterManager.selectedCharacter.position = {
         col: targetCol,
         row: targetRow,
       };
 
-      // // 選択されたキャラクターの位置も更新（扇形描画で使用）
-      // this.selectedCharacterPosition = {
-      //   col: targetCol,
-      //   row: targetRow,
-      // };
-
       console.log(`キャラクターが (${targetCol}, ${targetRow}) に移動しました`);
-
-      // 移動後にトリガー設定モードに入る
-      this.startTriggerSetting();
     }
 
     /**
@@ -818,7 +788,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       if (!character || character.scene === null) return;
 
       // キャラクターがマップに存在しない場合は何もしない
-      const selectedCharacterState = this.findCharacterByImage(character);
+      const selectedCharacterState =
+        this.characterManager.findCharacterByImage(character);
       if (!selectedCharacterState) return;
 
       // 既存のトリガー表示をクリア
@@ -850,7 +821,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       const subTriggerStatus = TRIGGER_STATUS[subTriggerKey];
 
       // 敵キャラクターかどうかを判定
-      const isEnemyCharacter = this.enemyCharacters.includes(
+      const isEnemyCharacter = this.characterManager.enemyCharacters.includes(
         selectedCharacterState
       );
 
@@ -964,7 +935,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         return;
       }
       // キャラクターがマップに存在しない場合は何もしない
-      const characterState = this.findCharacterByImage(character);
+      const characterState =
+        this.characterManager.findCharacterByImage(character);
       if (!characterState) {
         console.log(
           "キャラクターがマップに存在しないため、トリガー表示を更新しません",
@@ -1269,14 +1241,18 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         // 初期行動力を設定
         const characterKey = characterId as keyof typeof CHARACTER_STATUS;
         const characterStatus = CHARACTER_STATUS[characterKey];
-        this.playerCharacters.push({
-          image: character,
-          id: characterId,
-          position: { col: pos.col, row: pos.row },
-          direction: { main: 0, sub: 0 },
-          actionPoints: characterStatus.activeCount,
-          completeText: null,
-        });
+        this.characterManager.playerCharacters.push(
+          new PlayerCharacterState(
+            character,
+            { col: pos.col, row: pos.row },
+            characterId,
+            { main: 0, sub: 0 },
+            null,
+            characterStatus.activeCount,
+            null,
+            this.hexUtils
+          )
+        );
       });
 
       // 相手のキャラクター（上辺行）を配置
@@ -1310,13 +1286,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         // 相手のキャラクターは上下反転
         character.setFlipY(true);
 
-        this.enemyCharacters.push({
+        this.characterManager.enemyCharacters.push({
           image: character,
           id: characterId,
           position: { col: invertedPos.col, row: invertedPos.row },
           direction: { main: 180, sub: 180 },
-          actionPoints: 0, // 敵キャラクターの行動力は0で初期化
-          completeText: null,
+          triggerDisplay: null,
         });
       });
     }
@@ -1348,7 +1323,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private showAvoidText(character: Phaser.GameObjects.Image) {
       // キャラクターの位置を取得
-      const position = this.findCharacterByImage(character)?.position;
+      const position =
+        this.characterManager.findCharacterByImage(character)?.position;
       if (!position) return;
 
       const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
@@ -1390,7 +1366,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       damage: number
     ) {
       // キャラクターの位置を取得
-      const position = this.findCharacterByImage(character)?.position;
+      const position =
+        this.characterManager.findCharacterByImage(character)?.position;
       if (!position) return;
 
       const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
@@ -1429,7 +1406,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private showBailOutAndRemoveCharacter(character: Phaser.GameObjects.Image) {
       // キャラクターの位置を取得
-      const position = this.findCharacterByImage(character)?.position;
+      const position =
+        this.characterManager.findCharacterByImage(character)?.position;
       if (!position) return;
 
       const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
@@ -1487,7 +1465,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       }
 
       // 各種マップからキャラクターを削除
-      this.findCharacterByImage(character)?.image.destroy();
+      this.characterManager.findCharacterByImage(character)?.image.destroy();
 
       // トリガー表示をクリア
       this.clearTriggerDisplayForCharacter(character);
@@ -1502,13 +1480,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * トリガー設定モードを開始する
      */
     private startTriggerSetting() {
-      if (!this.selectedCharacter) return;
+      if (!this.characterManager.selectedCharacter) return;
 
       this.triggerSettingMode = true;
       this.triggerSettingType = "main";
 
       // キャラクターを紫色で強調表示（トリガー設定モード）
-      this.selectedCharacter.image.setTint(0xff00ff);
+      this.characterManager.selectedCharacter.image.setTint(0xff00ff);
 
       // mainトリガーの設定を開始
       this.showTriggerFan();
@@ -1518,10 +1496,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * トリガー扇形を表示する
      */
     private showTriggerFan() {
-      if (!this.selectedCharacter || !this.triggerSettingType) return;
+      if (!this.characterManager.selectedCharacter || !this.triggerSettingType)
+        return;
 
-      const characterState = this.findCharacterByImage(
-        this.selectedCharacter.image
+      const characterState = this.characterManager.findCharacterByImage(
+        this.characterManager.selectedCharacter.image
       );
       if (!characterState) return;
 
@@ -1560,8 +1539,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // 扇形を描画（移動後の位置を中心に）
       this.triggerFan = this.drawTriggerFan(
-        this.selectedCharacter.position.col,
-        this.selectedCharacter.position.row,
+        this.characterManager.selectedCharacter.position.col,
+        this.characterManager.selectedCharacter.position.row,
         this.currentTriggerAngle,
         angle,
         range,
@@ -1575,13 +1554,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private updateTriggerFan() {
       if (
         !this.triggerFan ||
-        !this.selectedCharacter ||
+        !this.characterManager.selectedCharacter ||
         !this.triggerSettingType
       )
         return;
 
-      const characterState = this.findCharacterByImage(
-        this.selectedCharacter.image
+      const characterState = this.characterManager.findCharacterByImage(
+        this.characterManager.selectedCharacter.image
       );
       if (!characterState) return;
 
@@ -1610,8 +1589,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       const color = this.triggerSettingType === "main" ? 0xff6b6b : 0x6b6bff;
 
       this.triggerFan = this.drawTriggerFan(
-        this.selectedCharacter.position.col,
-        this.selectedCharacter.position.row,
+        this.characterManager.selectedCharacter.position.col,
+        this.characterManager.selectedCharacter.position.row,
         this.currentTriggerAngle,
         angle,
         range,
@@ -1624,10 +1603,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @param direction 設定された方向
      */
     private completeTriggerSetting(direction: number) {
-      if (!this.selectedCharacter || !this.triggerSettingType) return;
+      if (!this.characterManager.selectedCharacter || !this.triggerSettingType)
+        return;
 
-      const characterState = this.findCharacterByImage(
-        this.selectedCharacter.image
+      const characterState = this.characterManager.findCharacterByImage(
+        this.characterManager.selectedCharacter.image
       );
       if (!characterState) return;
 
@@ -1670,11 +1650,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       console.log("トリガー設定が完了しました");
 
-      if (!this.selectedCharacter) return;
+      if (!this.characterManager.selectedCharacter) return;
       // 行動力が残っているかチェック
       const remainingActionPoints =
-        this.findCharacterByImage(this.selectedCharacter?.image)
-          ?.actionPoints ?? 0;
+        this.characterManager.findPlayerCharacterByImage(
+          this.characterManager.selectedCharacter?.image
+        )?.actionPoints ?? 0;
 
       if (remainingActionPoints > 0) {
         // 行動力が残っている場合：キャラクター選択を維持し、移動可能マスを再表示
@@ -1685,7 +1666,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
         // React側にキャラクター選択を維持することを通知
         notifyCharacterSelection(
-          this.selectedCharacter?.id,
+          this.characterManager.selectedCharacter?.id,
           remainingActionPoints
         );
       } else {
@@ -1703,24 +1684,26 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @param remainingMoves 残りの移動回数
      */
     private consumeActionPoint(remainingMoves: number) {
-      if (!this.selectedCharacter) return;
+      if (!this.characterManager.selectedCharacter) return;
       const currentActionPoints =
-        this.findCharacterByImage(this.selectedCharacter?.image)
-          ?.actionPoints ?? 0;
+        this.characterManager.findPlayerCharacterByImage(
+          this.characterManager.selectedCharacter?.image
+        )?.actionPoints ?? 0;
 
       if (currentActionPoints && currentActionPoints > 0) {
-        this.findCharacterByImage(this.selectedCharacter?.image)!.actionPoints =
-          remainingMoves;
+        this.characterManager.findPlayerCharacterByImage(
+          this.characterManager.selectedCharacter?.image
+        )!.actionPoints = remainingMoves;
 
         console.log(
-          `キャラクター${this.selectedCharacter?.id}の行動力を消費しました。残り: ${remainingMoves}`
+          `キャラクター${this.characterManager.selectedCharacter?.id}の行動力を消費しました。残り: ${remainingMoves}`
         );
 
         // React側に行動力の変更を通知
         actionPointsEmitter.dispatchEvent(
           new CustomEvent("actionPointsChanged", {
             detail: {
-              characterId: this.selectedCharacter?.id,
+              characterId: this.characterManager.selectedCharacter?.id,
               remainingPoints: remainingMoves,
             },
           })
@@ -1728,7 +1711,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
         // 行動力が0になった場合、「行動設定済み」テキストを表示
         if (remainingMoves === 0) {
-          this.showActionCompletedText(this.selectedCharacter.image);
+          this.showActionCompletedText(
+            this.characterManager.selectedCharacter.image
+          );
         }
 
         // 注意: 全キャラクターのチェックはfinishTriggerSetting()で行う
@@ -1743,9 +1728,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       let totalRemainingPoints = 0;
 
       // プレイヤーキャラクターの行動力をチェック
-      for (const character of this.playerCharacters) {
+      for (const character of this.characterManager.playerCharacters) {
         const actionPoints =
-          this.findCharacterByImage(character.image)?.actionPoints || 0;
+          this.characterManager.findPlayerCharacterByImage(character.image)
+            ?.actionPoints || 0;
         totalRemainingPoints += actionPoints;
         if (actionPoints > 0) {
           allCompleted = false;
@@ -1754,7 +1740,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       console.log(`残り行動力合計: ${totalRemainingPoints}`);
 
-      if (allCompleted && this.playerCharacters.length > 0) {
+      if (allCompleted && this.characterManager.playerCharacters.length > 0) {
         console.log(
           "全キャラクターの行動が完了しました！行動履歴を送信します..."
         );
@@ -1786,7 +1772,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * 行動完了テキストを表示する
      */
     private showActionCompletedText(character: Phaser.GameObjects.Image) {
-      const characterState = this.findCharacterByImage(character);
+      const characterState =
+        this.characterManager.findPlayerCharacterByImage(character);
       if (!characterState) return;
 
       const pixelPos = this.hexUtils.getHexPosition(
@@ -1827,71 +1814,93 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * 行動履歴を記録する
      */
     private recordActionHistory() {
-      if (!this.selectedCharacter) return;
+      /** 行動履歴を記録する */
+      const pushActionHistory = (col: number, row: number) => {
+        if (!this.characterManager.selectedCharacter) return;
 
-      const characterState = this.findCharacterByImage(
-        this.selectedCharacter.image
-      );
-      if (!characterState) return;
-
-      const directions = characterState.direction;
-      const mainTrigger =
-        CHARACTER_STATUS[characterState.id as keyof typeof CHARACTER_STATUS]
-          ?.main ?? null;
-      const subTrigger =
-        CHARACTER_STATUS[characterState.id as keyof typeof CHARACTER_STATUS]
-          ?.sub ?? null;
-
-      if (!directions || !mainTrigger || !subTrigger) {
-        console.warn(
-          "行動履歴の記録に失敗",
-          directions,
-          mainTrigger,
-          subTrigger
+        const characterState = this.characterManager.findPlayerCharacterByImage(
+          this.characterManager.selectedCharacter.image
         );
-        return;
+        if (!characterState) return;
+
+        const directions = characterState.direction;
+        const mainTrigger =
+          CHARACTER_STATUS[characterState.id as keyof typeof CHARACTER_STATUS]
+            ?.main ?? null;
+        const subTrigger =
+          CHARACTER_STATUS[characterState.id as keyof typeof CHARACTER_STATUS]
+            ?.sub ?? null;
+
+        if (!directions || !mainTrigger || !subTrigger) {
+          console.warn(
+            "行動履歴の記録に失敗",
+            directions,
+            mainTrigger,
+            subTrigger
+          );
+          return;
+        }
+
+        // 行動履歴に記録
+        const action = {
+          character: this.characterManager.selectedCharacter.image,
+          position: {
+            col: col,
+            row: row,
+          },
+          mainAzimuth: directions.main,
+          subAzimuth: directions.sub,
+          mainTrigger: mainTrigger,
+          subTrigger: subTrigger,
+          timestamp: new Date().toISOString(),
+        };
+
+        this.actionHistory.push(action);
+
+        // キャラクターIDを取得してログに出力
+        console.log(
+          `行動履歴を記録: キャラクター${
+            characterState.id
+          }, 位置(${col}, ${row}), mainトリガー: ${directions.main.toFixed(
+            1
+          )}度, subトリガー: ${directions.sub.toFixed(1)}度`
+        );
+
+        // グローバル履歴に追加
+        const historyEntry: ActionHistory = {
+          id: `${characterState.id}-${Date.now()}`,
+          characterId: characterState.id,
+          position: {
+            x: col,
+            y: row,
+          },
+          mainTriggerAngle: directions.main,
+          subTriggerAngle: directions.sub,
+          timestamp: Date.now(),
+        };
+        addToGlobalHistory(historyEntry);
+      };
+
+      if (!this.characterManager.selectedCharacter) return;
+
+      if (this.characterManager.beforePosition) {
+        // 移動前の位置がある場合、その位置を記録
+        const { col, row } = this.characterManager.beforePosition;
+
+        const movePath = this.hexUtils.findPath(
+          { col: col, row: row },
+          this.characterManager.selectedCharacter.position
+        );
+
+        for (const step of movePath) {
+          // 移動可能マスをクリック：キャラクターを移動
+          pushActionHistory(step.col, step.row);
+        }
+      } else {
+        // 移動していない場合、現在の位置を記録
+        const { col, row } = this.characterManager.selectedCharacter.position;
+        pushActionHistory(col, row);
       }
-
-      // 行動履歴に記録
-      const action = {
-        character: this.selectedCharacter.image,
-        position: {
-          col: characterState.position.col,
-          row: characterState.position.row,
-        },
-        mainAzimuth: directions.main,
-        subAzimuth: directions.sub,
-        mainTrigger: mainTrigger,
-        subTrigger: subTrigger,
-        timestamp: new Date().toISOString(),
-      };
-
-      this.actionHistory.push(action);
-
-      // キャラクターIDを取得してログに出力
-      console.log(
-        `行動履歴を記録: キャラクター${characterState.id}, 位置(${
-          characterState.position.col
-        }, ${
-          characterState.position.row
-        }), mainトリガー: ${directions.main.toFixed(
-          1
-        )}度, subトリガー: ${directions.sub.toFixed(1)}度`
-      );
-
-      // グローバル履歴に追加
-      const historyEntry: ActionHistory = {
-        id: `${characterState.id}-${Date.now()}`,
-        characterId: characterState.id,
-        position: {
-          x: characterState.position.col,
-          y: characterState.position.row,
-        },
-        mainTriggerAngle: directions.main,
-        subTriggerAngle: directions.sub,
-        timestamp: Date.now(),
-      };
-      addToGlobalHistory(historyEntry);
     }
 
     /**
@@ -1900,7 +1909,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     public getActionHistory() {
       return this.actionHistory.map((action) => ({
         characterId:
-          this.findCharacterByImage(action.character)?.id || "unknown",
+          this.characterManager.findPlayerCharacterByImage(action.character)
+            ?.id || "unknown",
         position: action.position,
         mainAzimuth: action.mainAzimuth,
         subAzimuth: action.subAzimuth,
@@ -1922,7 +1932,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       this.actionHistory.forEach((action, index) => {
         const characterId =
-          this.findCharacterByImage(action.character)?.id || "unknown";
+          this.characterManager.findPlayerCharacterByImage(action.character)
+            ?.id || "unknown";
         console.log(`${index + 1}. キャラクター${characterId}:`);
         console.log(
           `   位置: (${action.position.col}, ${action.position.row})`
@@ -1978,11 +1989,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // 全キャラクターのトリガー方向を表示（行動モード専用）
       // 注意：キャラクターの移動に合わせてトリガーも更新される
-      [...this.playerCharacters, ...this.enemyCharacters].forEach(
-        (character) => {
-          this.showTriggerDirections(character.image);
-        }
-      );
+      [
+        ...this.characterManager.playerCharacters,
+        ...this.characterManager.enemyCharacters,
+      ].forEach((character) => {
+        this.showTriggerDirections(character.image);
+      });
       // ステップベースの移動システムを使用
       this.executeStepBasedActions(turnCompleteResult, playerId);
     }
@@ -2099,7 +2111,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       );
 
       // トリガー方向を設定
-      this.findCharacterByImage(character)!.direction = {
+      this.characterManager.findCharacterByImage(character)!.direction = {
         main: stepChar.mainTriggerDirection,
         sub: stepChar.subTriggerDirection,
       };
@@ -2122,7 +2134,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         },
         onComplete: () => {
           // 位置情報を更新
-          this.findCharacterByImage(character)!.position = targetPosition;
+          this.characterManager.findCharacterByImage(character)!.position =
+            targetPosition;
 
           // トリガー表示を更新
           if (this.isActionMode) {
@@ -2138,25 +2151,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * IDでキャラクターを検索
      */
     private findCharacterById(characterId: string): CharacterImageState | null {
-      for (const character of this.playerCharacters) {
+      for (const character of this.characterManager.playerCharacters) {
         if (character.id === characterId) {
-          return character;
-        }
-      }
-      return null;
-    }
-
-    /**
-     * Phaserのキャラクターオブジェクトでキャラクターを検索
-     */
-    private findCharacterByImage(
-      characterImage: Phaser.GameObjects.Image
-    ): CharacterImageState | null {
-      for (const character of [
-        ...this.playerCharacters,
-        ...this.enemyCharacters,
-      ]) {
-        if (character.image === characterImage) {
           return character;
         }
       }
@@ -2169,7 +2165,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private findEnemyCharacterById(
       characterId: string
     ): CharacterImageState | null {
-      for (const character of this.enemyCharacters) {
+      for (const character of this.characterManager.enemyCharacters) {
         if (character.id === characterId) {
           return character;
         }
@@ -2209,7 +2205,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * 全キャラクターの行動力をリセット
      */
     private resetAllActionPoints() {
-      this.playerCharacters.forEach((character) => {
+      this.characterManager.playerCharacters.forEach((character) => {
         const characterId = character.id;
         if (characterId) {
           const characterKey = characterId as keyof typeof CHARACTER_STATUS;
@@ -2218,8 +2214,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             // 行動完了テキストを削除
             character.completeText?.destroy();
             // 行動力を最大値にリセット
-            this.findCharacterByImage(character.image)!.actionPoints =
-              characterStatus.activeCount;
+            this.characterManager.findPlayerCharacterByImage(
+              character.image
+            )!.actionPoints = characterStatus.activeCount;
           }
         }
       });

@@ -2,19 +2,11 @@
  * ゲームグリッド関連の型定義
  */
 
-export interface Position {
-  col: number;
-  row: number;
-}
+import { Position, TriggerDirection } from "~/types";
 
 export interface PixelPosition {
   x: number;
   y: number;
-}
-
-export interface TriggerDirection {
-  main: number;
-  sub: number;
 }
 
 export interface ActionHistoryItem {
@@ -44,24 +36,6 @@ export interface CharacterState {
   actionCompletedTexts: Map<Phaser.GameObjects.Image, Phaser.GameObjects.Text>;
   combatStats: Map<Phaser.GameObjects.Image, CombatStats>;
   triggerStats: Map<Phaser.GameObjects.Image, { main: TriggerStats; sub: TriggerStats }>;
-}
-
-/**
- * キャラクターごとの状態管理の型定義
- */
-export interface CharacterImageState {
-  /** Phaserのゲームオブジェクト */
-  image: Phaser.GameObjects.Image;
-  /** キャラクターの座標マス */
-  position: Position;
-  /** キャラクターのID */
-  id: string;
-  /** トリガーの向き */
-  direction: TriggerDirection;
-  /** 残りの行動力 */
-  actionPoints: number;
-  /** 行動設定完了表示 */
-  completeText: Phaser.GameObjects.Text | null;
 }
 
 export interface TriggerState {

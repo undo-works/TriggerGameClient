@@ -1,4 +1,5 @@
-import type { Position, GridConfig } from './types';
+import { Position } from '~/types';
+import type { GridConfig } from './types';
 
 /**
  * 六角形グリッド関連のユーティリティ関数
@@ -182,5 +183,124 @@ export class HexUtils {
       }
     }
     return result;
+  }
+
+  /**
+   * 指定された座標への移動経路配列を返す
+   * @param start 開始座標
+   * @param end 終了座標
+   * @return 移動経路の座標配列（開始位置は含まず、終了位置を含む）
+   */
+  findPath(
+    start: { col: number; row: number },
+    end: { col: number; row: number }
+  ): Position[] {
+    if (start.col === end.col && start.row === end.row) {
+      return [];
+    }
+
+    // A*アルゴリズムで最短経路を探索
+    const openSet = new Set<string>();
+    const closedSet = new Set<string>();
+    const cameFrom = new Map<string, { col: number; row: number }>();
+    const gScore = new Map<string, number>();
+    const fScore = new Map<string, number>();
+
+    const startKey = `${start.col},${start.row}`;
+    const endKey = `${end.col},${end.row}`;
+
+    // 初期化
+    openSet.add(startKey);
+    gScore.set(startKey, 0);
+    fScore.set(startKey, this.calculateHexDistance(start.col, start.row, end.col, end.row));
+
+    while (openSet.size > 0) {
+      // fScoreが最小のノードを選択
+      let current = '';
+      let minFScore = Infinity;
+      for (const node of openSet) {
+        const score = fScore.get(node) || Infinity;
+        if (score < minFScore) {
+          minFScore = score;
+          current = node;
+        }
+      }
+
+      const [currentCol, currentRow] = current.split(',').map(Number);
+
+      // 目標に到達した場合、経路を再構築
+      if (current === endKey) {
+        const path: Position[] = [];
+        let currentNode = current;
+
+        while (currentNode !== startKey) {
+          const [col, row] = currentNode.split(',').map(Number);
+          path.unshift({ col, row });
+          currentNode = `${cameFrom.get(currentNode)!.col},${cameFrom.get(currentNode)!.row}`;
+        }
+
+        return path;
+      }
+
+      openSet.delete(current);
+      closedSet.add(current);
+
+      // 隣接するノードを探索
+      const neighbors = this.getHexNeighbors(currentCol, currentRow);
+
+      for (const neighbor of neighbors) {
+        const neighborKey = `${neighbor.col},${neighbor.row}`;
+
+        if (closedSet.has(neighborKey)) {
+          continue;
+        }
+
+        const tentativeGScore = (gScore.get(current) || 0) + 1;
+
+        if (!openSet.has(neighborKey)) {
+          openSet.add(neighborKey);
+        } else if (tentativeGScore >= (gScore.get(neighborKey) || Infinity)) {
+          continue;
+        }
+
+        // より良い経路を発見
+        cameFrom.set(neighborKey, { col: currentCol, row: currentRow });
+        gScore.set(neighborKey, tentativeGScore);
+        fScore.set(neighborKey, tentativeGScore + this.calculateHexDistance(neighbor.col, neighbor.row, end.col, end.row));
+      }
+    }
+
+    // 経路が見つからない場合
+    return [];
+  }
+
+  /**
+   * 六角形グリッドにおける2点間の距離を計算
+   * @param col1 開始点の列
+   * @param row1 開始点の行
+   * @param col2 目標点の列
+   * @param row2 目標点の行
+   * @returns 六角形グリッドでの距離
+   */
+  private calculateHexDistance(col1: number, row1: number, col2: number, row2: number): number {
+    // 六角形グリッドを立方体座標系に変換
+    const cube1 = this.offsetToCube(col1, row1);
+    const cube2 = this.offsetToCube(col2, row2);
+
+    // 立方体座標系での距離計算
+    return (Math.abs(cube1.x - cube2.x) + Math.abs(cube1.y - cube2.y) + Math.abs(cube1.z - cube2.z)) / 2;
+  }
+
+  /**
+   * オフセット座標（col, row）を立方体座標（x, y, z）に変換
+   * @param col 列
+   * @param row 行
+   * @returns 立方体座標
+   */
+  private offsetToCube(col: number, row: number): { x: number; y: number; z: number } {
+    const x = col;
+    const z = row - (col - (col & 1)) / 2;
+    const y = -x - z;
+    return { x, y, z };
   }
 }

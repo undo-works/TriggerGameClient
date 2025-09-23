@@ -1,6 +1,3 @@
-
-const smallActive = false;
-
 /**
  * キャラクターのステータス
  */
@@ -8,7 +5,7 @@ export const CHARACTER_STATUS = {
   character01: {
     main: "ASTEROID",
     sub: "RAYGUST",
-    activeCount: smallActive ? 3 : 13,
+    activeCount: 13,
     trion: 2,
     attack: 3,
     defense: 4,
@@ -19,7 +16,7 @@ export const CHARACTER_STATUS = {
   character02: {
     main: "SCOPEON",
     sub: "SHIELD",
-    activeCount: smallActive ? 3 : 16,
+    activeCount: 16,
     trion: 7,
     attack: 9,
     defense: 8,
@@ -30,7 +27,7 @@ export const CHARACTER_STATUS = {
   character03: {
     main: "IBIS",
     sub: "BAGWORM",
-    activeCount: smallActive ? 3 : 12,
+    activeCount: 12,
     trion: 25,
     attack: 2,
     defense: 4,
@@ -41,7 +38,7 @@ export const CHARACTER_STATUS = {
   character04: {
     main: "KOGETSU",
     sub: "SHIELD",
-    activeCount: smallActive ? 3 : 15,
+    activeCount: 15,
     trion: 18,
     attack: 8,
     defense: 9,
