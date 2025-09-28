@@ -1055,6 +1055,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             : stepChar.position,
           minHp
         );
+      } else if (stepChar.avoidCount > 0) {
+        // 回避状態を表示
+        this.gameView.showAvoidImage(
+          isEnemyCharacter
+            ? this.hexUtils.invertPosition(stepChar.position)
+            : stepChar.position
+        );
       }
     }
     /**
