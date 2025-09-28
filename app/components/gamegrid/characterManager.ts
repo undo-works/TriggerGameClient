@@ -16,7 +16,7 @@ export class CharacterManager {
   public movableHexes: Phaser.GameObjects.Graphics[] = []; // 移動可能な六角形のハイライト
 
   /** 選択キャラクターの前のポジション */
-  public beforePosition: Position | null = null;
+  public beforePositionState: Map<Phaser.GameObjects.Image, Position | null> = new Map();
 
 
 
@@ -104,5 +104,16 @@ export class CharacterManager {
       }
     }
     return false;
+  }
+
+  /**
+   * キャラクターを破棄する
+   * @param character - 破棄するキャラクター
+   */
+  destroyCharacter = (character: CharacterImageState) => {
+    character.image.destroy();
+
+    this.playerCharacters = this.playerCharacters.filter(c => c !== character);
+    this.enemyCharacters = this.enemyCharacters.filter(c => c !== character);
   }
 }

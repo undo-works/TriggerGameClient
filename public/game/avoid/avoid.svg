@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="16.802584mm"
+   height="19.401953mm"
+   viewBox="0 0 16.802584 19.401953"
+   version="1.1"
+   id="svg1"
+   xml:space="preserve"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><path
+     style="font-variation-settings:'wght' 400;mix-blend-mode:normal;fill:url(#pattern31);fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.743034;stroke-dasharray:none;stroke-opacity:1"
+     id="path2"
+     d="m 78.406647,196.13169 -11.425232,6.59636 -11.425233,-6.59636 0,-13.19273 11.425233,-6.59636 11.425232,6.59636 z"
+     transform="matrix(0.71217003,0,0,0.71217003,-39.300864,-125.2804)" /><defs
+     id="defs1"><linearGradient
+       id="linearGradient32"><stop
+         style="stop-color:#009688;stop-opacity:1;"
+         offset="0"
+         id="stop32" /><stop
+         style="stop-color:#00bcd4;stop-opacity:1;"
+         offset="1"
+         id="stop33" /></linearGradient><pattern
+       xlink:href="#Strips1_3"
+       preserveAspectRatio="xMidYMid"
+       id="pattern31"
+       patternTransform="matrix(0.51961524,0.3,-0.3,0.51961524,0,0)"
+       x="0"
+       y="0" /><pattern
+       patternUnits="userSpaceOnUse"
+       width="4"
+       height="1"
+       patternTransform="translate(0,0) scale(2,2)"
+       preserveAspectRatio="xMidYMid"
+       id="Strips1_3"
+       style="fill:#009688;fill-opacity:1">
+      <rect
+   style="stroke:none;fill-opacity:1.0;fill:#009688"
+   x="0"
+   y="-0.5"
+   width="1"
+   height="2"
+   id="rect152" />
+    </pattern><linearGradient
+       id="swatch2"><stop
+         style="stop-color:#03a9f4;stop-opacity:1;"
+         offset="0"
+         id="stop2" /></linearGradient></defs><rect
+     style="font-variation-settings:'wght' 400;fill:#009688;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:0.529167;stroke-dasharray:none;stroke-opacity:1"
+     id="rect32"
+     width="14.215149"
+     height="6.7165427"
+     x="1.2937177"
+     y="6.5785317" /><text
+     xml:space="preserve"
+     style="font-size:6.43676px;font-family:'Noto Sans JP';-inkscape-font-specification:'Noto Sans JP, @wght=400';font-variation-settings:'wght' 400;text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:0.529167;stroke-dasharray:none;stroke-opacity:1"
+     x="1.8164883"
+     y="12.385989"
+     id="text32"><tspan
+       id="tspan32"
+       style="fill:#ffffff;fill-opacity:1;stroke-width:0.529167"
+       x="1.8164883"
+       y="12.385989">回避</tspan></text></svg>

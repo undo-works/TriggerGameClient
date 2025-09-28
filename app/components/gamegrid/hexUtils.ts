@@ -1,10 +1,11 @@
 import { Position } from '~/types';
-import type { GridConfig } from './types';
+import { GridConfig } from './types';
 
 /**
  * 六角形グリッド関連のユーティリティ関数
  */
 export class HexUtils {
+
   constructor(private config: GridConfig) { }
 
   /**
@@ -121,7 +122,7 @@ export class HexUtils {
   }
 
   /**
-   * 六角形グリッドの隣接する6マスの座標を取得する
+   * 六角形グリッドの移動可能なマスを取得
    * @param col 中心の列
    * @param row 中心の行
    * @param activeCount キャラクターの残り行動力
@@ -173,13 +174,19 @@ export class HexUtils {
     }
 
     // 開始位置を除いて結果を返す
-    const result: { col: number; row: number; remainActiveCount: number }[] =
-      [];
-    for (const [key, remainingMoves] of reachableHexes.entries()) {
+    const result: { col: number; row: number; remainActiveCount: number }[] = [];
+    for (const [key] of reachableHexes.entries()) {
       const [c, r] = key.split(",").map(Number);
-      // 開始位置は除外
       if (c !== col || r !== row) {
-        result.push({ col: c, row: r, remainActiveCount: remainingMoves });
+        const shortestPath = this.findPath({ col, row }, { col: c, row: r });
+        const actualCost = shortestPath.length;
+        const actualRemaining = activeCount - actualCost;
+
+        result.push({
+          col: c,
+          row: r,
+          remainActiveCount: Math.max(0, actualRemaining)
+        });
       }
     }
     return result;

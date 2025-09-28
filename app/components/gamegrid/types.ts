@@ -76,15 +76,6 @@ export interface TriggerStats {
   avoid: number;
 }
 
-export interface CombatResult {
-  attacker: Phaser.GameObjects.Image;
-  defender: Phaser.GameObjects.Image;
-  damage: number;
-  isHit: boolean;
-  isAvoid: boolean;
-  isDefeat: boolean;
-}
-
 export interface TriggerArea {
   character: Phaser.GameObjects.Image;
   triggerType: "main" | "sub";

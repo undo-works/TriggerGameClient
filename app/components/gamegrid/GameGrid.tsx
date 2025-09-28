@@ -7,8 +7,8 @@ import {
 } from "../../contexts/WebSocketContext";
 import { HexUtils } from "./hexUtils";
 import type {
-  CombatResult,
   CombatStepResult,
+  GridConfig,
   StepCharacterResult,
   TurnCompleteResult,
 } from "./types";
@@ -16,6 +16,7 @@ import { playerCharacterKeys, playerPositions } from "~/utils/CharacterConfig";
 import { CharacterManager } from "./characterManager";
 import { CharacterImageState } from "~/entities/CharacterImageState";
 import { PlayerCharacterState } from "~/entities/PlayerCharacterState";
+import { GameView } from "./GameView";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -23,20 +24,6 @@ import { PlayerCharacterState } from "~/entities/PlayerCharacterState";
  */
 const createGridScene = (Phaser: typeof import("phaser")) => {
   return class GridScene extends Phaser.Scene {
-    // グリッドの設定
-    private gridSize: number = 32; // 1マスのサイズ（ピクセル）
-    private gridWidth: number = 36; // グリッドの幅（マス数）
-    private gridHeight: number = 36; // グリッドの高さ（マス数）
-
-    // 六角形グリッドの設定
-    private hexRadius: number = 24; // 六角形の半径
-    private hexWidth: number = this.hexRadius * 2; // 六角形の幅
-    private hexHeight: number = this.hexRadius * Math.sqrt(3); // 六角形の高さ
-
-    // グリッドの余白設定
-    private marginLeft: number = 0; // 左側の余白
-    private marginTop: number = 0; // 上側の余白
-
     // Phaserオブジェクト
     private hoveredCell: { x: number; y: number } | null = null; // マウスでホバーしているセル
     private cellHighlight!: Phaser.GameObjects.Graphics; // セルのハイライト表示用
@@ -70,8 +57,21 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private isActionMode: boolean = false;
     private actionAnimationInProgress: boolean = false;
 
+    /** グリッドの設定値 */
+    private gridConfig: GridConfig = {
+      gridSize: 32,
+      gridWidth: 36,
+      gridHeight: 36,
+      hexRadius: 24,
+      hexWidth: 24 * 2,
+      hexHeight: 24 * Math.sqrt(3),
+      marginLeft: 0,
+      marginTop: 0,
+    };
     /** グリッドフィールドの関数群 */
     private hexUtils!: HexUtils;
+    /** ゲーム表示関連のクラス */
+    private gameView!: GameView;
 
     // トリガー表示管理
     private triggerDisplays: Map<
@@ -89,6 +89,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     preload() {
       this.createBackgroundTexture();
       this.loadCharacterAssets();
+      this.loadGameAssets();
     }
 
     /**
@@ -102,6 +103,23 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.load.image("character04", "/character/04.svg");
     }
 
+    private loadGameAssets() {
+      // ゲーム関連のアセットを読み込み
+      this.load.image(
+        "shield_hexagon_blue",
+        "/game/shields/shield_hexagon_blue.svg"
+      );
+      this.load.image(
+        "shield_hexagon_red",
+        "/game/shields/shield_hexagon_red.svg"
+      );
+      this.load.image(
+        "shield_hexagon_yellow",
+        "/game/shields/shield_hexagon_yellow.svg"
+      );
+      this.load.image("avoid", "/game/avoid/avoid.svg");
+    }
+
     /**
      * 背景テクスチャ（白色）を動的に作成
      * HTMLのCanvasを使って白色のテクスチャを描画し、Phaserテクスチャとして登録
@@ -109,13 +127,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private createBackgroundTexture() {
       // HTMLのCanvasを作成
       const canvas = document.createElement("canvas");
-      canvas.width = this.gridSize;
-      canvas.height = this.gridSize;
+      canvas.width = this.gridConfig.gridSize;
+      canvas.height = this.gridConfig.gridSize;
       const ctx = canvas.getContext("2d")!;
 
       // 背景色を設定（真っ白）
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, this.gridSize, this.gridSize);
+      ctx.fillRect(0, 0, this.gridConfig.gridSize, this.gridConfig.gridSize);
 
       // 作成したCanvasをPhaserテクスチャとして登録
       this.textures.addCanvas("whiteTile", canvas);
@@ -130,64 +148,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       const gameHeight = this.cameras.main.height;
 
       // 画面の横幅/縦幅の半分程度の余白を設定
-      this.marginLeft = gameWidth * 0.5;
-      this.marginTop = gameHeight * 0.5;
-    }
-
-    /**
-     * トリガーの扇形エリアを描画する
-     * @param centerCol 中心列
-     * @param centerRow 中心行
-     * @param direction 方向（度数）
-     * @param angle 角度範囲（度数）
-     * @param range 射程
-     * @param color 色（16進数）
-     * @param alpha 透明度
-     */
-    private drawTriggerFan(
-      centerCol: number,
-      centerRow: number,
-      direction: number,
-      angle: number,
-      range: number,
-      color: number = 0xff6b6b,
-      alpha: number = 0.4
-    ): Phaser.GameObjects.Graphics {
-      const centerPos = this.hexUtils.getHexPosition(centerCol, centerRow);
-      const fanGraphics = this.add.graphics();
-
-      // 扇形の描画
-      fanGraphics.fillStyle(color, alpha);
-      fanGraphics.lineStyle(2, color, 0.8);
-
-      // 扇形の範囲（ピクセル単位での半径）
-      const fanRadius = range * this.hexRadius * 2;
-
-      // 角度をラジアンに変換（Phaserは-90度オフセット）
-      const startAngle = ((direction - angle / 2 - 90) * Math.PI) / 180;
-      const endAngle = ((direction + angle / 2 - 90) * Math.PI) / 180;
-
-      // 扇形を描画
-      fanGraphics.beginPath();
-      fanGraphics.moveTo(centerPos.x, centerPos.y);
-      fanGraphics.arc(
-        centerPos.x,
-        centerPos.y,
-        fanRadius,
-        startAngle,
-        endAngle
-      );
-      fanGraphics.closePath();
-      fanGraphics.fillPath();
-      fanGraphics.strokePath();
-
-      fanGraphics.setDepth(0.7);
-      fanGraphics.setInteractive(
-        new Phaser.Geom.Circle(centerPos.x, centerPos.y, fanRadius),
-        Phaser.Geom.Circle.Contains
-      );
-
-      return fanGraphics;
+      this.gridConfig = {
+        ...this.gridConfig,
+        marginLeft: gameWidth * 0.5,
+        marginTop: gameHeight * 0.5,
+      };
     }
 
     /**
@@ -221,12 +186,22 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private setupCamera() {
       // カメラの境界を設定（グリッド全体をカバー + 余白）
-      const gridWidth = this.gridWidth * this.hexWidth * 0.75 + this.hexWidth;
-      const gridHeight = this.gridHeight * this.hexHeight + this.hexHeight;
+      const gridWidth =
+        this.gridConfig.gridWidth * this.gridConfig.hexWidth * 0.75 +
+        this.gridConfig.hexWidth;
+      const gridHeight =
+        this.gridConfig.gridHeight * this.gridConfig.hexHeight +
+        this.gridConfig.hexHeight;
+
+      console.log(
+        "Margin Size:",
+        this.gridConfig.marginLeft,
+        this.gridConfig.marginTop
+      );
 
       // 余白を含めたワールドサイズ
-      const worldWidth = gridWidth + this.marginLeft * 2;
-      const worldHeight = gridHeight + this.marginTop * 2;
+      const worldWidth = gridWidth + this.gridConfig.marginLeft * 2;
+      const worldHeight = gridHeight + this.gridConfig.marginTop * 2;
 
       // カメラの境界を設定
       this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
@@ -314,17 +289,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     /**
      * 六角形グリッドのユーティリティを初期化する
      */
-    initializeHexUtils() {
-      this.hexUtils = new HexUtils({
-        gridSize: this.gridSize,
-        gridWidth: this.gridWidth,
-        gridHeight: this.gridHeight,
-        hexRadius: this.hexRadius,
-        hexWidth: this.hexWidth,
-        hexHeight: this.hexHeight,
-        marginLeft: this.marginLeft,
-        marginTop: this.marginTop,
-      });
+    initializeGameConfig() {
+      this.hexUtils = new HexUtils(this.gridConfig);
+      this.gameView = new GameView(this, this.gridConfig);
     }
 
     /**
@@ -334,7 +301,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     create() {
       this.initializeMargins(); // 余白を初期化
       this.setupCamera(); // カメラの設定を最初に行う
-      this.initializeHexUtils(); // 六角形グリッドのユーティリティ初期化
+      this.initializeGameConfig(); // 六角形グリッドの設定値初期化
       this.createBackgroundTiles(); // 背景タイルを配置
       this.createGrid(); // グリッドラインを描画
       this.createCharacters(); // キャラクターを配置
@@ -364,8 +331,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private createBackgroundTiles() {
       // 各グリッドセルに六角形の背景を配置
-      for (let col = 0; col < this.gridWidth; col++) {
-        for (let row = 0; row < this.gridHeight; row++) {
+      for (let col = 0; col < this.gridConfig.gridWidth; col++) {
+        for (let row = 0; row < this.gridConfig.gridHeight; row++) {
           const pos = this.hexUtils.getHexPosition(col, row);
 
           // 六角形を描画
@@ -384,6 +351,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           hexagon.strokePath();
 
           hexagon.setDepth(0); // 背景レイヤー
+
+          // 六角形の位置情報を書き込む
+          this.gameView.writeTilePositionDirect(col, row);
         }
       }
     }
@@ -459,9 +429,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           );
           if (
             hexCoord.col >= 0 &&
-            hexCoord.col < this.gridWidth &&
+            hexCoord.col < this.gridConfig.gridWidth &&
             hexCoord.row >= 0 &&
-            hexCoord.row < this.gridHeight
+            hexCoord.row < this.gridConfig.gridHeight
           ) {
             this.hoveredCell = { x: hexCoord.col, y: hexCoord.row };
             this.updateCellHighlight();
@@ -509,9 +479,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         // グリッド範囲内の場合
         if (
           hexCoord.col >= 0 &&
-          hexCoord.col < this.gridWidth &&
+          hexCoord.col < this.gridConfig.gridWidth &&
           hexCoord.row >= 0 &&
-          hexCoord.row < this.gridHeight
+          hexCoord.row < this.gridConfig.gridHeight
         ) {
           // そのマスにキャラクターがいるかチェック
           const characterAtPosition =
@@ -524,6 +494,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             if (
               characterAtPosition === this.characterManager.selectedCharacter
             ) {
+              // 移動前のポジションを保存
+              this.characterManager.beforePositionState.set(
+                this.characterManager.selectedCharacter.image,
+                this.characterManager.selectedCharacter.position
+              );
+
               // 既に選択されているキャラクターを再度クリック：トリガー設定モードに入る
               console.log(
                 `選択中のキャラクターをクリック: トリガー設定モードに入ります`
@@ -558,8 +534,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             );
 
             // 移動前のポジションを保存
-            this.characterManager.beforePosition =
-              this.characterManager.selectedCharacter.position;
+            this.characterManager.beforePositionState.set(
+              this.characterManager.selectedCharacter.image,
+              this.characterManager.selectedCharacter.position
+            );
 
             if (isMovable && !characterAtPosition) {
               this.moveCharacter(hexCoord.col, hexCoord.row);
@@ -834,7 +812,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         : directions.sub;
 
       // メイントリガーを表示（赤系クリアカラー、実際のangleとrangeを使用）
-      const mainTrigger = this.createTriggerDisplay(
+      const mainTrigger = this.gameView.drawTriggerFanShape(
+        null,
         centerPos.x,
         centerPos.y,
         mainDirection,
@@ -845,7 +824,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       );
 
       // サブトリガーを表示（青系クリアカラー、実際のangleとrangeを使用）
-      const subTrigger = this.createTriggerDisplay(
+      const subTrigger = this.gameView.drawTriggerFanShape(
+        null,
         centerPos.x,
         centerPos.y,
         subDirection,
@@ -859,12 +839,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       const mainLabel = this.add.text(
         centerPos.x +
           Math.cos(((mainDirection - 90) * Math.PI) / 180) *
-            this.hexRadius *
+            this.gridConfig.hexRadius *
             mainTriggerStatus.range *
             2,
         centerPos.y +
           Math.sin(((mainDirection - 90) * Math.PI) / 180) *
-            this.hexRadius *
+            this.gridConfig.hexRadius *
             mainTriggerStatus.range *
             2,
         "Main",
@@ -881,12 +861,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       const subLabel = this.add.text(
         centerPos.x +
           Math.cos(((subDirection - 90) * Math.PI) / 180) *
-            this.hexRadius *
+            this.gridConfig.hexRadius *
             subTriggerStatus.range *
             2,
         centerPos.y +
           Math.sin(((subDirection - 90) * Math.PI) / 180) *
-            this.hexRadius *
+            this.gridConfig.hexRadius *
             subTriggerStatus.range *
             2,
         "Sub",
@@ -950,7 +930,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           "キャラクターが撃墜されているため、トリガー表示を更新しません",
           stepChar
         );
-        character.setVisible(false);
+        this.gameView.showBailOutAndRemoveCharacter(characterState);
+        this.characterManager.destroyCharacter(characterState);
+        this.clearTriggerDisplayForCharacter(character);
         return;
       }
       const directions = characterState.direction;
@@ -994,7 +976,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // メイントリガーの表示を更新
       if (displays.mainTrigger) {
         displays.mainTrigger.clear();
-        this.drawTriggerFanShape(
+        this.gameView.drawTriggerFanShape(
           displays.mainTrigger,
           currentX,
           currentY,
@@ -1013,12 +995,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           mainLabel.setPosition(
             currentX +
               Math.cos(((mainDirection - 90) * Math.PI) / 180) *
-                this.hexRadius *
+                this.gridConfig.hexRadius *
                 mainTriggerStatus.range *
                 2,
             currentY +
               Math.sin(((mainDirection - 90) * Math.PI) / 180) *
-                this.hexRadius *
+                this.gridConfig.hexRadius *
                 mainTriggerStatus.range *
                 2
           );
@@ -1028,7 +1010,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // サブトリガーの表示を更新
       if (displays.subTrigger) {
         displays.subTrigger.clear();
-        this.drawTriggerFanShape(
+        this.gameView.drawTriggerFanShape(
           displays.subTrigger,
           currentX,
           currentY,
@@ -1047,102 +1029,34 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           subLabel.setPosition(
             currentX +
               Math.cos(((subDirection - 90) * Math.PI) / 180) *
-                this.hexRadius *
+                this.gridConfig.hexRadius *
                 subTriggerStatus.range *
                 2,
             currentY +
               Math.sin(((subDirection - 90) * Math.PI) / 180) *
-                this.hexRadius *
+                this.gridConfig.hexRadius *
                 subTriggerStatus.range *
                 2
           );
         }
       }
+
+      if (stepChar.guardCount > 0) {
+        // 0より大きいHPの値を取得
+        const validHpValues = [
+          stepChar.mainTriggerHP,
+          stepChar.subTriggerHP,
+        ].filter((hp) => hp > 0);
+        const minHp = Math.min(...validHpValues);
+        // 減ってるほうのシールド状態を表示
+        this.gameView.showShieldImage(
+          isEnemyCharacter
+            ? this.hexUtils.invertPosition(stepChar.position)
+            : stepChar.position,
+          minHp
+        );
+      }
     }
-
-    /**
-     * トリガー扇形の表示を作成する
-     */
-    private createTriggerDisplay(
-      centerX: number,
-      centerY: number,
-      direction: number,
-      color: number,
-      alpha: number,
-      triggerAngle: number = 60,
-      triggerRange: number = 3
-    ): Phaser.GameObjects.Graphics {
-      const triggerGraphics = this.add.graphics();
-      triggerGraphics.setDepth(1);
-
-      // 扇形の設定（トリガーの実際のangleとrangeを使用）
-      const radius = this.hexRadius * triggerRange * 2;
-      const fanAngle = triggerAngle;
-
-      // Phaserの座標系に合わせて角度を補正（-90度）
-      const correctedDirection = direction - 90;
-
-      // 開始角度と終了角度を計算（度数を使用）
-      const startAngle = (correctedDirection - fanAngle / 2) * (Math.PI / 180);
-      const endAngle = (correctedDirection + fanAngle / 2) * (Math.PI / 180);
-
-      // 扇形を描画
-      triggerGraphics.fillStyle(color, alpha);
-      triggerGraphics.lineStyle(2, color, 0.8);
-
-      triggerGraphics.beginPath();
-      triggerGraphics.moveTo(centerX, centerY);
-      triggerGraphics.arc(
-        centerX,
-        centerY,
-        radius,
-        startAngle,
-        endAngle,
-        false
-      );
-      triggerGraphics.closePath();
-      triggerGraphics.fillPath();
-      triggerGraphics.strokePath();
-
-      return triggerGraphics;
-    }
-
-    /**
-     * 既存のGraphicsオブジェクトに扇形を描画する（アニメーション追従用）
-     */
-    private drawTriggerFanShape(
-      graphics: Phaser.GameObjects.Graphics,
-      centerX: number,
-      centerY: number,
-      direction: number,
-      color: number,
-      alpha: number,
-      triggerAngle: number = 60,
-      triggerRange: number = 3
-    ) {
-      // 扇形の設定（トリガーの実際のangleとrangeを使用）
-      const radius = this.hexRadius * triggerRange * 2;
-      const fanAngle = triggerAngle;
-
-      // Phaserの座標系に合わせて角度を補正（-90度）
-      const correctedDirection = direction - 90;
-
-      // 開始角度と終了角度を計算（度数を使用）
-      const startAngle = (correctedDirection - fanAngle / 2) * (Math.PI / 180);
-      const endAngle = (correctedDirection + fanAngle / 2) * (Math.PI / 180);
-
-      // 扇形を描画
-      graphics.fillStyle(color, alpha);
-      graphics.lineStyle(2, color, 0.8);
-
-      graphics.beginPath();
-      graphics.moveTo(centerX, centerY);
-      graphics.arc(centerX, centerY, radius, startAngle, endAngle, false);
-      graphics.closePath();
-      graphics.fillPath();
-      graphics.strokePath();
-    }
-
     /**
      * 全てのトリガー表示をクリア
      */
@@ -1229,7 +1143,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           playerCharacterKeys[index]
         );
         character.setOrigin(0.5, 0.5);
-        character.setDisplaySize(this.hexRadius * 1.2, this.hexRadius * 1.2); // 六角形に合わせたサイズ
+        character.setDisplaySize(
+          this.gridConfig.hexRadius * 1.2,
+          this.gridConfig.hexRadius * 1.2
+        ); // 六角形に合わせたサイズ
         character.setDepth(2); // 前面に表示
 
         // 青い色調を追加（自分のキャラクター識別用）
@@ -1277,7 +1194,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           playerCharacterKeys[index]
         );
         character.setOrigin(0.5, 0.5);
-        character.setDisplaySize(this.hexRadius * 1.2, this.hexRadius * 1.2); // 六角形に合わせたサイズ
+        character.setDisplaySize(
+          this.gridConfig.hexRadius * 1.2,
+          this.gridConfig.hexRadius * 1.2
+        ); // 六角形に合わせたサイズ
         character.setDepth(2); // 前面に表示
 
         // 赤い色調を追加（相手のキャラクター識別用）
@@ -1294,186 +1214,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           triggerDisplay: null,
         });
       });
-    }
-
-    /**
-     * 個別の戦闘結果を処理する
-     */
-    private processCombatResult(result: CombatResult) {
-      // 戦闘エフェクトの表示
-      if (result.isHit) {
-        if (result.isAvoid) {
-          console.log("攻撃が回避されました！");
-          // 回避表示
-          this.showAvoidText(result.defender);
-        } else {
-          // ダメージ表示（回避されていない場合のみ）
-          this.showDamageText(result.defender, result.damage);
-        }
-
-        if (result.isDefeat) {
-          // ベイルアウト表示と撃破処理
-          this.showBailOutAndRemoveCharacter(result.defender);
-        }
-      }
-    }
-
-    /**
-     * 回避テキストを表示する
-     */
-    private showAvoidText(character: Phaser.GameObjects.Image) {
-      // キャラクターの位置を取得
-      const position =
-        this.characterManager.findCharacterByImage(character)?.position;
-      if (!position) return;
-
-      const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
-
-      // 回避テキストを作成
-      const avoidText = this.add.text(
-        pixelPos.x,
-        pixelPos.y - this.hexRadius * 0.8,
-        "MISS",
-        {
-          fontSize: "14px",
-          color: "#00ff00",
-          fontStyle: "bold",
-          backgroundColor: "#000000",
-          padding: { x: 4, y: 2 },
-        }
-      );
-      avoidText.setOrigin(0.5);
-      avoidText.setDepth(10); // 最前面に表示
-
-      // アニメーション: 上に移動しながらフェードアウト
-      this.tweens.add({
-        targets: avoidText,
-        y: pixelPos.y - this.hexRadius * 2,
-        alpha: 0,
-        duration: 1500,
-        ease: "Power2",
-        onComplete: () => {
-          avoidText.destroy();
-        },
-      });
-    }
-
-    /**
-     * ダメージテキストを表示する
-     */
-    private showDamageText(
-      character: Phaser.GameObjects.Image,
-      damage: number
-    ) {
-      // キャラクターの位置を取得
-      const position =
-        this.characterManager.findCharacterByImage(character)?.position;
-      if (!position) return;
-
-      const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
-
-      // ダメージテキストを作成
-      const damageText = this.add.text(
-        pixelPos.x,
-        pixelPos.y - this.hexRadius * 0.8,
-        `-${damage}`,
-        {
-          fontSize: "16px",
-          color: "#ff0000",
-          fontStyle: "bold",
-          backgroundColor: "#ffffff",
-          padding: { x: 4, y: 2 },
-        }
-      );
-      damageText.setOrigin(0.5);
-      damageText.setDepth(10); // 最前面に表示
-
-      // アニメーション: 上に移動しながらフェードアウト
-      this.tweens.add({
-        targets: damageText,
-        y: pixelPos.y - this.hexRadius * 2,
-        alpha: 0,
-        duration: 1500,
-        ease: "Power2",
-        onComplete: () => {
-          damageText.destroy();
-        },
-      });
-    }
-
-    /**
-     * ベイルアウト表示と撃破されたキャラクターの削除
-     */
-    private showBailOutAndRemoveCharacter(character: Phaser.GameObjects.Image) {
-      // キャラクターの位置を取得
-      const position =
-        this.characterManager.findCharacterByImage(character)?.position;
-      if (!position) return;
-
-      const pixelPos = this.hexUtils.getHexPosition(position.col, position.row);
-
-      // ベイルアウトテキストを作成
-      const bailOutText = this.add.text(
-        pixelPos.x,
-        pixelPos.y - this.hexRadius * 0.8,
-        "ベイルアウト",
-        {
-          fontSize: "14px",
-          color: "#ffffff",
-          fontStyle: "bold",
-          backgroundColor: "#000000",
-          padding: { x: 6, y: 3 },
-        }
-      );
-      bailOutText.setOrigin(0.5);
-      bailOutText.setDepth(10); // 最前面に表示
-
-      // ベイルアウトテキストのアニメーション
-      this.tweens.add({
-        targets: bailOutText,
-        y: pixelPos.y - this.hexRadius * 2,
-        alpha: 0,
-        duration: 2000,
-        ease: "Power2",
-        onComplete: () => {
-          bailOutText.destroy();
-        },
-      });
-
-      // キャラクターを徐々に透明にして削除
-      this.tweens.add({
-        targets: character,
-        alpha: 0,
-        duration: 1000,
-        delay: 500, // ベイルアウトテキスト表示後少し待ってから開始
-        ease: "Power2",
-        onComplete: () => {
-          // キャラクターを完全に削除
-          this.removeCharacterCompletely(character);
-        },
-      });
-    }
-
-    /**
-     * キャラクターを完全に削除する
-     */
-    private removeCharacterCompletely(character: Phaser.GameObjects.Image) {
-      // HPバーを削除
-      const hpBar = character.getData("hpBar");
-      if (hpBar) {
-        hpBar.destroy();
-      }
-
-      // 各種マップからキャラクターを削除
-      this.characterManager.findCharacterByImage(character)?.image.destroy();
-
-      // トリガー表示をクリア
-      this.clearTriggerDisplayForCharacter(character);
-
-      // キャラクターオブジェクトを削除
-      character.destroy();
-
-      console.log("キャラクターが完全に削除されました");
     }
 
     /**
@@ -1537,14 +1277,21 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // subトリガーの場合は色を変える
       const color = this.triggerSettingType === "main" ? 0xff6b6b : 0x6b6bff;
 
-      // 扇形を描画（移動後の位置を中心に）
-      this.triggerFan = this.drawTriggerFan(
+      const pixelPos = this.hexUtils.getHexPosition(
         this.characterManager.selectedCharacter.position.col,
-        this.characterManager.selectedCharacter.position.row,
+        this.characterManager.selectedCharacter.position.row
+      );
+
+      // 扇形を描画（移動後の位置を中心に）
+      this.triggerFan = this.gameView.drawTriggerFanShape(
+        this.triggerFan,
+        pixelPos.x,
+        pixelPos.y,
         this.currentTriggerAngle,
+        color,
+        0.2,
         angle,
-        range,
-        color
+        range
       );
     }
 
@@ -1588,13 +1335,20 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // subトリガーの場合は色を変える
       const color = this.triggerSettingType === "main" ? 0xff6b6b : 0x6b6bff;
 
-      this.triggerFan = this.drawTriggerFan(
+      const pixelPos = this.hexUtils.getHexPosition(
         this.characterManager.selectedCharacter.position.col,
-        this.characterManager.selectedCharacter.position.row,
+        this.characterManager.selectedCharacter.position.row
+      );
+
+      this.triggerFan = this.gameView.drawTriggerFanShape(
+        null, // 破棄済みなので新しいオブジェクトを作成
+        pixelPos.x,
+        pixelPos.y,
         this.currentTriggerAngle,
+        color,
+        0.2,
         angle,
-        range,
-        color
+        range
       );
     }
 
@@ -1883,9 +1637,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       if (!this.characterManager.selectedCharacter) return;
 
-      if (this.characterManager.beforePosition) {
+      const beforePosition = this.characterManager.beforePositionState.get(
+        this.characterManager.selectedCharacter.image
+      );
+
+      if (
+        beforePosition &&
+        beforePosition !== this.characterManager.selectedCharacter.position
+      ) {
         // 移動前の位置がある場合、その位置を記録
-        const { col, row } = this.characterManager.beforePosition;
+        const { col, row } = beforePosition;
 
         const movePath = this.hexUtils.findPath(
           { col: col, row: row },
@@ -1986,6 +1747,14 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       console.log(`ターン ${turnCompleteResult.turnNumber} の行動実行開始`);
       this.isActionMode = true;
       this.actionAnimationInProgress = true;
+
+      // 行動設定済みテキストを全てクリア
+      this.characterManager.playerCharacters.forEach((char) => {
+        if (char.completeText) {
+          char.completeText.destroy();
+          char.completeText = null;
+        }
+      });
 
       // 全キャラクターのトリガー方向を表示（行動モード専用）
       // 注意：キャラクターの移動に合わせてトリガーも更新される
@@ -2134,8 +1903,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         },
         onComplete: () => {
           // 位置情報を更新
-          this.characterManager.findCharacterByImage(character)!.position =
-            targetPosition;
+          const foundCharacter =
+            this.characterManager.findCharacterByImage(character);
+          if (foundCharacter) {
+            foundCharacter.position = targetPosition;
+          }
 
           // トリガー表示を更新
           if (this.isActionMode) {
@@ -2774,9 +2546,9 @@ const ActionHistoryDisplay: React.FC<{
         行動力残り - {actionPoints}
       </h3>
       <div className="max-h-40 overflow-y-auto">
-        {histories.slice(-5).map((history) => (
+        {histories.slice(-5).map((history, index) => (
           <div
-            key={history.id}
+            key={index}
             className="mb-2 p-2 bg-gray-700 bg-opacity-50 rounded text-xs"
           >
             <div className="text-blue-300">
