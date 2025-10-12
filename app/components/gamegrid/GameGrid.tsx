@@ -382,13 +382,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // マウス移動イベント
       this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-        // 行動モード中は操作を無効化
-        if (this.isActionMode || this.actionAnimationInProgress) {
-          return;
-        }
-
         // カメラドラッグ中の処理
-        if (isDraggingCamera && pointer.leftButtonDown()) {
+        if (!this.triggerFan && pointer.leftButtonDown()) {
           const deltaX = pointer.x - dragStartX;
           const deltaY = pointer.y - dragStartY;
           // しきい値を超えた場合はカメラドラッグとして判定
@@ -398,8 +393,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           ) {
             this.cameras.main.scrollX = cameraStartX - deltaX;
             this.cameras.main.scrollY = cameraStartY - deltaY;
+            isDraggingCamera = true;
           }
           return;
+        }
+
+        // 行動モード中はカメラドラッグ以外の操作を無効化
+        if (this.isActionMode || this.actionAnimationInProgress) {
           return;
         }
 
@@ -450,13 +450,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         }
       });
 
-      // マウスクリックイベント
       this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-        // 行動モード中は操作を無効化
-        if (this.isActionMode || this.actionAnimationInProgress) {
-          console.log("行動実行中のため操作できません");
-          return;
-        }
+        dragStartX = pointer.x;
+        dragStartY = pointer.y;
+        cameraStartX = this.cameras.main.scrollX;
+        cameraStartY = this.cameras.main.scrollY;
+
         // トリガー設定モードの場合
         if (
           this.triggerSettingMode &&
@@ -464,6 +463,27 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           this.characterManager.selectedCharacter
         ) {
           this.isDraggingTrigger = true;
+          return;
+        }
+      });
+
+      // マウスクリックイベント
+      this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+        // カメラドラッグ終了
+        if (isDraggingCamera) {
+          isDraggingCamera = false;
+          return;
+        }
+
+        // 行動モード中はカメラドラッグ以外の操作を無効化
+        if (this.isActionMode || this.actionAnimationInProgress) {
+          console.log("行動実行中のため操作できません");
+          return;
+        }
+
+        if (this.isDraggingTrigger && this.triggerSettingMode) {
+          this.isDraggingTrigger = false;
+          this.completeTriggerSetting(this.currentTriggerAngle);
           return;
         }
 
@@ -552,31 +572,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             console.log(
               `クリックされた六角形: (${hexCoord.col}, ${hexCoord.row})`
             );
-
-            // 左クリックでドラッグの場合はカメラドラッグ開始
-            if (pointer.leftButtonDown()) {
-              isDraggingCamera = true;
-              dragStartX = pointer.x;
-              dragStartY = pointer.y;
-              cameraStartX = this.cameras.main.scrollX;
-              cameraStartY = this.cameras.main.scrollY;
-              return;
-            }
           }
-        }
-      });
-
-      // マウス離上イベント
-      this.input.on("pointerup", () => {
-        // カメラドラッグ終了
-        if (isDraggingCamera) {
-          isDraggingCamera = false;
-          return;
-        }
-
-        if (this.isDraggingTrigger && this.triggerSettingMode) {
-          this.isDraggingTrigger = false;
-          this.completeTriggerSetting(this.currentTriggerAngle);
         }
       });
     }
