@@ -378,20 +378,28 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       let dragStartY = 0;
       let cameraStartX = 0;
       let cameraStartY = 0;
+      const DRAG_THRESHOLD = 10;
 
       // マウス移動イベント
       this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-        // カメラドラッグ中の処理
-        if (isDraggingCamera) {
-          const deltaX = pointer.x - dragStartX;
-          const deltaY = pointer.y - dragStartY;
-          this.cameras.main.scrollX = cameraStartX - deltaX;
-          this.cameras.main.scrollY = cameraStartY - deltaY;
+        // 行動モード中は操作を無効化
+        if (this.isActionMode || this.actionAnimationInProgress) {
           return;
         }
 
-        // 行動モード中は操作を無効化
-        if (this.isActionMode || this.actionAnimationInProgress) {
+        // カメラドラッグ中の処理
+        if (isDraggingCamera && pointer.leftButtonDown()) {
+          const deltaX = pointer.x - dragStartX;
+          const deltaY = pointer.y - dragStartY;
+          // しきい値を超えた場合はカメラドラッグとして判定
+          if (
+            Math.abs(deltaX) > DRAG_THRESHOLD ||
+            Math.abs(deltaY) > DRAG_THRESHOLD
+          ) {
+            this.cameras.main.scrollX = cameraStartX - deltaX;
+            this.cameras.main.scrollY = cameraStartY - deltaY;
+          }
+          return;
           return;
         }
 
@@ -444,16 +452,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // マウスクリックイベント
       this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-        // 右クリックまたは中クリックの場合はカメラドラッグ開始
-        if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
-          isDraggingCamera = true;
-          dragStartX = pointer.x;
-          dragStartY = pointer.y;
-          cameraStartX = this.cameras.main.scrollX;
-          cameraStartY = this.cameras.main.scrollY;
-          return;
-        }
-
         // 行動モード中は操作を無効化
         if (this.isActionMode || this.actionAnimationInProgress) {
           console.log("行動実行中のため操作できません");
@@ -554,6 +552,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             console.log(
               `クリックされた六角形: (${hexCoord.col}, ${hexCoord.row})`
             );
+
+            // 左クリックでドラッグの場合はカメラドラッグ開始
+            if (pointer.leftButtonDown()) {
+              isDraggingCamera = true;
+              dragStartX = pointer.x;
+              dragStartY = pointer.y;
+              cameraStartX = this.cameras.main.scrollX;
+              cameraStartY = this.cameras.main.scrollY;
+              return;
+            }
           }
         }
       });

@@ -3,7 +3,7 @@ import { Link } from "@remix-run/react";
 
 export const meta: MetaFunction = () => {
   return [
-    { title: "スーパーロボット大戦風グリッドフィールド" },
+    { title: "ワールドトリガー閉鎖環境試験グリッド対戦ゲーム" },
     { name: "description", content: "Phaserで作成したグリッドフィールドデモ" },
   ];
 };
@@ -42,7 +42,7 @@ export default function Index() {
           <p className="text-xl text-gray-300 mb-12 max-w-2xl mx-auto leading-relaxed">
             次世代のリアルタイム戦略シミュレーションゲーム
             <br />
-            スーパーロボット大戦風グリッドフィールド対戦
+            ワールドトリガー閉鎖環境試験編で登場したグリッド対戦ゲームを開発中！
           </p>
 
           {/* マッチング画面へのリンク */}
@@ -72,7 +72,7 @@ export default function Index() {
         <div className="max-w-6xl mx-auto mb-20">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-light text-white mb-4">
-              <span className="font-bold">主要機能</span>
+              <span className="font-bold">実装済み機能</span>
             </h2>
             <div className="w-20 h-1 bg-gradient-to-r from-blue-400 to-indigo-400 mx-auto rounded-full"></div>
           </div>
@@ -100,7 +100,7 @@ export default function Index() {
                 戦略的グリッドバトル
               </h3>
               <p className="text-gray-300 leading-relaxed">
-                36x36の六角形グリッドフィールドで、キャラクターの配置と射撃方向を戦略的に決定できます。
+                36x36の六角形グリッドフィールドで、キャラクターの配置とトリガー方向を戦略的に決定できます。
               </p>
             </div>
 
@@ -113,7 +113,7 @@ export default function Index() {
                 キャラクター操作
               </h3>
               <p className="text-gray-300 leading-relaxed">
-                4体のキャラクターを操作し、移動・メイン射撃・サブ射撃の方向を設定して戦略を組み立てます。
+                玉狛第二のメンバーを操作し、移動・メイントリガー・サブトリガーの方向を設定して戦略を組み立てます。
               </p>
             </div>
 
@@ -126,7 +126,7 @@ export default function Index() {
                 行動力システム
               </h3>
               <p className="text-gray-300 leading-relaxed">
-                各キャラクターは行動力を持ち、移動や射撃設定で消費します。戦略的な行動力管理が勝利の鍵です。
+                各キャラクターは行動力を持ち、移動で消費します。戦略的な行動力管理が勝利の鍵です。
               </p>
             </div>
 
@@ -140,6 +140,7 @@ export default function Index() {
               </h3>
               <p className="text-gray-300 leading-relaxed">
                 WebSocketサーバーが自動で対戦相手を見つけてマッチングを行います。待機時間を最小限に抑えます。
+                EdgeとChromeで開けば一人でも体験できます。
               </p>
             </div>
 

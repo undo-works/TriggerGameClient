@@ -6,7 +6,7 @@ import { useNavigate } from "@remix-run/react";
 
 export const meta: MetaFunction = () => {
   return [
-    { title: "スーパーロボット大戦風グリッドフィールド" },
+    { title: "ワールドトリガー閉鎖環境試験グリッド対戦ゲーム" },
     { name: "description", content: "Phaserで作成したグリッドフィールドデモ" },
   ];
 };
