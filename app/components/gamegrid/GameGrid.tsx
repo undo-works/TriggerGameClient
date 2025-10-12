@@ -820,7 +820,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         0xff4444, // 赤系
         0.3,
         mainTriggerStatus.angle,
-        mainTriggerStatus.range
+        mainTriggerStatus.range,
+        mainTriggerKey
       );
 
       // サブトリガーを表示（青系クリアカラー、実際のangleとrangeを使用）
@@ -832,63 +833,15 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         0x4444ff, // 青系
         0.2,
         subTriggerStatus.angle,
-        subTriggerStatus.range
+        subTriggerStatus.range,
+        subTriggerKey
       );
-
-      // ラベルを追加（実際のトリガー射程に基づいて位置を計算、敵の場合は180度補正）
-      const mainLabel = this.add.text(
-        centerPos.x +
-          Math.cos(((mainDirection - 90) * Math.PI) / 180) *
-            this.gridConfig.hexRadius *
-            mainTriggerStatus.range *
-            2,
-        centerPos.y +
-          Math.sin(((mainDirection - 90) * Math.PI) / 180) *
-            this.gridConfig.hexRadius *
-            mainTriggerStatus.range *
-            2,
-        "Main",
-        {
-          fontSize: "10px",
-          color: "#ff4444",
-          backgroundColor: "#ffffff",
-          padding: { x: 2, y: 1 },
-        }
-      );
-      mainLabel.setOrigin(0.5);
-      mainLabel.setDepth(3);
-
-      const subLabel = this.add.text(
-        centerPos.x +
-          Math.cos(((subDirection - 90) * Math.PI) / 180) *
-            this.gridConfig.hexRadius *
-            subTriggerStatus.range *
-            2,
-        centerPos.y +
-          Math.sin(((subDirection - 90) * Math.PI) / 180) *
-            this.gridConfig.hexRadius *
-            subTriggerStatus.range *
-            2,
-        "Sub",
-        {
-          fontSize: "10px",
-          color: "#4444ff",
-          backgroundColor: "#ffffff",
-          padding: { x: 2, y: 1 },
-        }
-      );
-      subLabel.setOrigin(0.5);
-      subLabel.setDepth(3);
 
       // トリガー表示を保存（ラベルも含める）
       this.triggerDisplays.set(character, {
         mainTrigger,
         subTrigger,
       });
-
-      // ラベル用の保存領域を追加
-      mainTrigger.setData("label", mainLabel);
-      subTrigger.setData("label", subLabel);
     }
 
     /**
@@ -975,6 +928,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // メイントリガーの表示を更新
       if (displays.mainTrigger) {
+        displays.mainTrigger.getData("label").destroy(); // 古いラベルを削除
         displays.mainTrigger.clear();
         this.gameView.drawTriggerFanShape(
           displays.mainTrigger,
@@ -984,31 +938,14 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           0xff4444,
           0.3,
           mainTriggerStatus.angle,
-          mainTriggerStatus.range
+          mainTriggerStatus.range,
+          mainTriggerKey
         );
-
-        // メインラベルの位置も更新
-        const mainLabel = displays.mainTrigger.getData(
-          "label"
-        ) as Phaser.GameObjects.Text;
-        if (mainLabel) {
-          mainLabel.setPosition(
-            currentX +
-              Math.cos(((mainDirection - 90) * Math.PI) / 180) *
-                this.gridConfig.hexRadius *
-                mainTriggerStatus.range *
-                2,
-            currentY +
-              Math.sin(((mainDirection - 90) * Math.PI) / 180) *
-                this.gridConfig.hexRadius *
-                mainTriggerStatus.range *
-                2
-          );
-        }
       }
 
       // サブトリガーの表示を更新
       if (displays.subTrigger) {
+        displays.subTrigger.getData("label").destroy(); // 古いラベルを削除
         displays.subTrigger.clear();
         this.gameView.drawTriggerFanShape(
           displays.subTrigger,
@@ -1018,27 +955,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           0x4444ff,
           0.2,
           subTriggerStatus.angle,
-          subTriggerStatus.range
+          subTriggerStatus.range,
+          subTriggerKey
         );
-
-        // サブラベルの位置も更新
-        const subLabel = displays.subTrigger.getData(
-          "label"
-        ) as Phaser.GameObjects.Text;
-        if (subLabel) {
-          subLabel.setPosition(
-            currentX +
-              Math.cos(((subDirection - 90) * Math.PI) / 180) *
-                this.gridConfig.hexRadius *
-                subTriggerStatus.range *
-                2,
-            currentY +
-              Math.sin(((subDirection - 90) * Math.PI) / 180) *
-                this.gridConfig.hexRadius *
-                subTriggerStatus.range *
-                2
-          );
-        }
       }
 
       if (stepChar.guardCount > 0) {
@@ -1298,12 +1217,13 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         color,
         0.2,
         angle,
-        range
+        range,
+        triggerName
       );
     }
 
     /**
-     * トリガー扇形の表示を更新する
+     * マウスのドラッグでトリガー扇形の表示を更新する
      */
     private updateTriggerFan() {
       if (
@@ -1333,6 +1253,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       if (!triggerStatus) return;
 
       // 既存の扇形を削除
+      this.triggerFan.getData("label").destroy();
       this.triggerFan.destroy();
 
       // 新しい扇形を描画（移動後の位置を中心に）
@@ -1355,7 +1276,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         color,
         0.2,
         angle,
-        range
+        range,
+        triggerName
       );
     }
 
@@ -1433,6 +1355,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       } else {
         // 行動力が0の場合：選択をクリア
         console.log("行動力が0になりました。キャラクター選択をクリアします。");
+        // 行動力が0になった場合、「行動設定済み」テキストを表示
+        this.showActionCompletedText(
+          this.characterManager.selectedCharacter.image
+        );
         this.clearSelection();
       }
 
@@ -1469,15 +1395,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             },
           })
         );
-
-        // 行動力が0になった場合、「行動設定済み」テキストを表示
-        if (remainingMoves === 0) {
-          this.showActionCompletedText(
-            this.characterManager.selectedCharacter.image
-          );
-        }
-
-        // 注意: 全キャラクターのチェックはfinishTriggerSetting()で行う
       }
     }
 
@@ -1566,6 +1483,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private clearTriggerDisplay() {
       if (this.triggerFan) {
+        this.triggerFan.getData("label").destroy();
         this.triggerFan.destroy();
         this.triggerFan = null;
       }

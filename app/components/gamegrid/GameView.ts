@@ -148,6 +148,7 @@ export class GameView {
    * @param alpha - 扇形の透明度（0.0〜1.0）
    * @param triggerAngle - 扇形の角度（デフォルト60度）
    * @param triggerRange - 扇形の範囲（デフォルト3マス）
+   * @param triggerName - 扇形のラベル名（デフォルト空文字）
    * @returns 作成または更新されたGraphicsオブジェクト
    */
   drawTriggerFanShape(
@@ -158,7 +159,8 @@ export class GameView {
     color: number,
     alpha: number,
     triggerAngle: number = 60,
-    triggerRange: number = 3
+    triggerRange: number = 3,
+    triggerName: string = "",
   ): Phaser.GameObjects.Graphics {
     const triggerGraphics = graphics ?? this.scene.add.graphics();
     triggerGraphics.setDepth(1);
@@ -192,6 +194,31 @@ export class GameView {
     triggerGraphics.closePath();
     triggerGraphics.fillPath();
     triggerGraphics.strokePath();
+
+    // ラベルを追加（実際のトリガー射程に基づいて位置を計算、敵の場合は180度補正）
+    const mainLabel = this.scene.add.text(
+      centerX +
+      Math.cos((correctedDirection * Math.PI) / 180) *
+      this.gridConfig.hexRadius *
+      triggerRange + 1.0,
+      centerY +
+      Math.sin((correctedDirection * Math.PI) / 180) *
+      this.gridConfig.hexRadius *
+      triggerRange + 1.0,
+      triggerName,
+      {
+        fontSize: "14px",
+        color: `#${color.toString(16).padStart(6, '0')}`,
+        backgroundColor: "#ffffffdd",
+        padding: { x: 8, y: 4 },
+        fontStyle: "bold",
+      }
+    );
+    mainLabel.setOrigin(0.5);
+    mainLabel.setDepth(3);
+
+    // ラベル用の保存領域を追加
+    triggerGraphics.setData("label", mainLabel);
 
     return triggerGraphics;
   }
