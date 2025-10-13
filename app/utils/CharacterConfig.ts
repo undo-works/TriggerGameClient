@@ -7,8 +7,8 @@ export const playerPositions = [
 ];
 
 export const playerCharacterKeys = [
-  "character01",
-  "character02",
-  "character03",
-  "character04",
+  "MIKUMO_OSAMU",
+  "KUGA_YUMA",
+  "AMATORI_CHIKA",
+  "HYUSE_KURONIN",
 ];

@@ -2,7 +2,7 @@
  * キャラクターのステータス
  */
 export const CHARACTER_STATUS = {
-  character01: {
+  MIKUMO_OSAMU: {
     main: "ASTEROID",
     sub: "RAYGUST",
     activeCount: 13,
@@ -13,7 +13,7 @@ export const CHARACTER_STATUS = {
     support: 5,
     technique: 6,
   },
-  character02: {
+  KUGA_YUMA: {
     main: "SCOPEON",
     sub: "SHIELD",
     activeCount: 16,
@@ -24,7 +24,7 @@ export const CHARACTER_STATUS = {
     support: 8,
     technique: 8,
   },
-  character03: {
+  AMATORI_CHIKA: {
     main: "IBIS",
     sub: "BAGWORM",
     activeCount: 12,
@@ -35,7 +35,7 @@ export const CHARACTER_STATUS = {
     support: 5,
     technique: 6,
   },
-  character04: {
+  HYUSE_KURONIN: {
     main: "KOGETSU",
     sub: "SHIELD",
     activeCount: 15,

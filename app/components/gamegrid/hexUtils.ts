@@ -63,15 +63,16 @@ export class HexUtils {
 
   /**
    * ピクセル座標から六角形グリッド座標に変換する（カメラのズーム・スクロール対応）
-   * @param x ピクセルX座標
-   * @param y ピクセルY座標
+   * @param screenX ピクセルX座標
+   * @param screenY ピクセルY座標
    * @param camera Phaserのカメラオブジェクト
    * @returns {col, row} グリッド座標
    */
-  pixelToHex(x: number, y: number, camera: Phaser.Cameras.Scene2D.Camera): { col: number; row: number } {
+  pixelToHex(screenX: number, screenY: number, camera: Phaser.Cameras.Scene2D.Camera): { col: number; row: number } {
     // カメラのズームとスクロールを考慮した座標変換
-    const worldX = (x + camera.scrollX) / camera.zoom;
-    const worldY = (y + camera.scrollY) / camera.zoom;
+    const worldPoint = camera.getWorldPoint(screenX, screenY);
+    const worldX = worldPoint.x;
+    const worldY = worldPoint.y;
 
     const adjustedX = worldX - this.config.marginLeft - this.config.hexRadius;
     const adjustedY = worldY - this.config.marginTop - this.config.hexRadius;
@@ -80,6 +81,34 @@ export class HexUtils {
     const offsetYForCol = col % 2 === 1 ? this.config.hexHeight / 2 : 0;
     const row = Math.round((adjustedY - offsetYForCol) / this.config.hexHeight);
     return { col, row };
+  }
+
+
+  /**
+   * マウス位置から角度を計算する（カメラのズーム・スクロール対応）
+   * @param centerX 中心X座標（世界座標）
+   * @param centerY 中心Y座標（世界座標）
+   * @param mouseX マウスX座標（スクリーン座標）
+   * @param mouseY マウスY座標（スクリーン座標）
+   * @returns 角度（度数）
+   */
+  calculateMouseAngle(
+    centerX: number,
+    centerY: number,
+    mouseX: number,
+    mouseY: number,
+    camera: Phaser.Cameras.Scene2D.Camera
+  ): number {
+    // カメラのズームとスクロールを考慮したマウス座標変換
+    const worldPoint = camera.getWorldPoint(mouseX, mouseY);
+    const worldMouseX = worldPoint.x;
+    const worldMouseY = worldPoint.y;
+
+    const dx = worldMouseX - centerX;
+    const dy = worldMouseY - centerY;
+    let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    if (angle < 0) angle += 360;
+    return angle;
   }
 
   /**

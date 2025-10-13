@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@remix-run/react";
 import { CHARACTER_STATUS, TRIGGER_STATUS } from "../../constants/status";
 import {
@@ -17,6 +17,8 @@ import { CharacterManager } from "./characterManager";
 import { CharacterImageState } from "~/entities/CharacterImageState";
 import { PlayerCharacterState } from "~/entities/PlayerCharacterState";
 import { GameView } from "./GameView";
+import GridLeftNav from "../nav/GridLeftNav";
+import { ActionHistory } from "~/entities/ActionHistoryEntity";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -97,10 +99,10 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private loadCharacterAssets() {
       // キャラクター画像を読み込み
-      this.load.image("character01", "/character/01.svg");
-      this.load.image("character02", "/character/02.svg");
-      this.load.image("character03", "/character/03.svg");
-      this.load.image("character04", "/character/04.svg");
+      this.load.image("MIKUMO_OSAMU", "/character/MIKUMO_OSAMU.svg");
+      this.load.image("KUGA_YUMA", "/character/KUGA_YUMA.svg");
+      this.load.image("AMATORI_CHIKA", "/character/AMATORI_CHIKA.svg");
+      this.load.image("HYUSE_KURONIN", "/character/HYUSE_KURONIN.svg");
     }
 
     private loadGameAssets() {
@@ -156,32 +158,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     }
 
     /**
-     * マウス位置から角度を計算する（カメラのズーム・スクロール対応）
-     * @param centerX 中心X座標（世界座標）
-     * @param centerY 中心Y座標（世界座標）
-     * @param mouseX マウスX座標（スクリーン座標）
-     * @param mouseY マウスY座標（スクリーン座標）
-     * @returns 角度（度数）
-     */
-    private calculateMouseAngle(
-      centerX: number,
-      centerY: number,
-      mouseX: number,
-      mouseY: number
-    ): number {
-      // カメラのズームとスクロールを考慮したマウス座標変換
-      const camera = this.cameras.main;
-      const worldMouseX = (mouseX + camera.scrollX) / camera.zoom;
-      const worldMouseY = (mouseY + camera.scrollY) / camera.zoom;
-
-      const dx = worldMouseX - centerX;
-      const dy = worldMouseY - centerY;
-      let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-      if (angle < 0) angle += 360;
-      return angle;
-    }
-
-    /**
      * カメラの設定（スクロールと拡大縮小）
      */
     private setupCamera() {
@@ -193,12 +169,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         this.gridConfig.gridHeight * this.gridConfig.hexHeight +
         this.gridConfig.hexHeight;
 
-      console.log(
-        "Margin Size:",
-        this.gridConfig.marginLeft,
-        this.gridConfig.marginTop
-      );
-
       // 余白を含めたワールドサイズ
       const worldWidth = gridWidth + this.gridConfig.marginLeft * 2;
       const worldHeight = gridHeight + this.gridConfig.marginTop * 2;
@@ -209,81 +179,23 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 初期位置を中央に設定（余白を考慮）
       this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
 
-      // 三段階のズームレベル
-      const zoomLevels = [0.5, 1.0, 2.0]; // 縮小、普通、拡大
       let currentZoomIndex = 1; // 初期値は普通（1.0）
 
-      // マウスホイールで三段階ズーム
-      this.input.on(
-        "wheel",
-        (
-          pointer: Phaser.Input.Pointer,
-          gameObjects: Phaser.GameObjects.GameObject[],
-          deltaX: number,
-          deltaY: number
-        ) => {
-          const camera = this.cameras.main;
+      // マウスホイールでズーム切り替え
+      this.input.on("wheel", (pointer: Phaser.Input.Pointer) => {
+        const camera = this.cameras.main;
+        const deltaY = pointer.deltaY;
+        console.log("Current Zoom Index:", currentZoomIndex, deltaY);
 
-          if (deltaY > 0) {
-            // ズームアウト（縮小方向）
-            if (currentZoomIndex > 0) {
-              currentZoomIndex--;
-            }
-          } else {
-            // ズームイン（拡大方向）
-            if (currentZoomIndex < zoomLevels.length - 1) {
-              currentZoomIndex++;
-            }
-          }
-
-          const newZoom = zoomLevels[currentZoomIndex];
-          camera.setZoom(newZoom);
-
-          // ズームレベルをReact側に通知
-          zoomChangeEmitter.dispatchEvent(
-            new CustomEvent("zoomChanged", {
-              detail: { zoomLevel: currentZoomIndex, zoom: newZoom },
-            })
-          );
+        if (deltaY >= 0) {
+          // ズームアウト（縮小方向）
+          currentZoomIndex *= 0.5;
+        } else {
+          // ズームイン（拡大方向）
+          currentZoomIndex *= 1.5;
         }
-      );
-
-      // WASDキーでカメラ移動
-      const cursors = this.input.keyboard?.createCursorKeys();
-      if (cursors && this.input.keyboard) {
-        this.input.keyboard.on("keydown-W", () => {
-          this.cameras.main.scrollY -= 50;
-        });
-
-        this.input.keyboard.on("keydown-S", () => {
-          this.cameras.main.scrollY += 50;
-        });
-
-        this.input.keyboard.on("keydown-A", () => {
-          this.cameras.main.scrollX -= 50;
-        });
-
-        this.input.keyboard.on("keydown-D", () => {
-          this.cameras.main.scrollX += 50;
-        });
-
-        // 矢印キーでも移動可能
-        this.input.keyboard.on("keydown-UP", () => {
-          this.cameras.main.scrollY -= 50;
-        });
-
-        this.input.keyboard.on("keydown-DOWN", () => {
-          this.cameras.main.scrollY += 50;
-        });
-
-        this.input.keyboard.on("keydown-LEFT", () => {
-          this.cameras.main.scrollX -= 50;
-        });
-
-        this.input.keyboard.on("keydown-RIGHT", () => {
-          this.cameras.main.scrollX += 50;
-        });
-      }
+        camera.setZoom(currentZoomIndex);
+      });
     }
 
     /**
@@ -413,11 +325,12 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             this.characterManager.selectedCharacter.position.col,
             this.characterManager.selectedCharacter.position.row
           );
-          const newAngle = this.calculateMouseAngle(
+          const newAngle = this.hexUtils.calculateMouseAngle(
             centerPos.x,
             centerPos.y,
             pointer.x,
-            pointer.y
+            pointer.y,
+            this.cameras.main
           );
           this.currentTriggerAngle = newAngle;
           this.updateTriggerFan();
@@ -1065,7 +978,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private createCharacters() {
       // 自分のキャラクターを配置
       playerPositions.forEach((pos, index) => {
-        const characterId = "character" + String(index + 1).padStart(2, "0"); // "01", "02", "03", "04"
+        const characterId = Object.keys(CHARACTER_STATUS)[index]; // キャラクターID: "MIKUMO_OSAMU", "KUGA_YUMA", "AMATORI_CHIKA", "HYUSE_KURONIN"
         const position = this.hexUtils.getHexPosition(pos.col, pos.row);
         const character = this.add.image(
           position.x,
@@ -1117,7 +1030,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           invertedPos.col,
           invertedPos.row
         );
-        const characterId = "character" + String(index + 1).padStart(2, "0"); // 敵キャラクターID: "01", "02", "03", "04"
+        const characterId = Object.keys(CHARACTER_STATUS)[index]; // キャラクターID: "MIKUMO_OSAMU", "KUGA_YUMA", "AMATORI_CHIKA", "HYUSE_KURONIN"
         const character = this.add.image(
           position.x,
           position.y,
@@ -1946,36 +1859,9 @@ const GameGrid = () => {
     null
   );
 
-  // 選択されたキャラクターの行動力を管理するステート
-  const [selectedCharacterActionPoints, setSelectedCharacterActionPoints] =
-    useState<number>(0);
-
   // ゲームモードの状態管理
   const [gameMode, setGameMode] = useState<"setup" | "action">("setup");
   const [currentTurn, setCurrentTurn] = useState<number>(1);
-
-  // ズームレベルの状態管理
-  const [zoomLevel, setZoomLevel] = useState<number>(1); // 0: 縮小, 1: 普通, 2: 拡大
-  const zoomLevels = [0.5, 1.0, 2.0];
-  const zoomLabels = ["縮小", "普通", "拡大"];
-
-  // ズームレベルを変更する関数
-  const changeZoomLevel = (newLevel: number) => {
-    if (newLevel >= 0 && newLevel < zoomLevels.length && gameRef.current) {
-      setZoomLevel(newLevel);
-      // Phaserゲームのカメラズームを変更
-      const scene = gameRef.current.scene.getScene("GridScene");
-      if (
-        scene &&
-        (scene as { cameras: { main: { setZoom: (zoom: number) => void } } })
-          .cameras
-      ) {
-        (
-          scene as { cameras: { main: { setZoom: (zoom: number) => void } } }
-        ).cameras.main.setZoom(zoomLevels[newLevel]);
-      }
-    }
-  };
 
   // 対戦終了処理
   const handleEndMatch = () => {
@@ -2134,20 +2020,6 @@ const GameGrid = () => {
     };
   }, [addMessageListener, removeMessageListener, navigate]);
 
-  // ズーム変更の監視
-  useEffect(() => {
-    const handleZoomChange = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { zoomLevel: newZoomLevel } = customEvent.detail;
-      setZoomLevel(newZoomLevel);
-    };
-
-    zoomChangeEmitter.addEventListener("zoomChanged", handleZoomChange);
-    return () => {
-      zoomChangeEmitter.removeEventListener("zoomChanged", handleZoomChange);
-    };
-  }, []);
-
   // 行動実行完了の処理
   useEffect(() => {
     const handleActionExecutionCompleted = (event: Event) => {
@@ -2182,9 +2054,8 @@ const GameGrid = () => {
     // キャラクター選択の変更を監視
     const handleCharacterSelection = (event: Event) => {
       const customEvent = event as CustomEvent;
-      const { characterId, actionPoints } = customEvent.detail;
+      const { characterId } = customEvent.detail;
       setSelectedCharacterId(characterId);
-      setSelectedCharacterActionPoints(actionPoints);
     };
 
     characterSelectionEmitter.addEventListener(
@@ -2259,28 +2130,8 @@ const GameGrid = () => {
 
   return (
     <div className="game-container relative w-full h-screen overflow-hidden">
-      {/* ズームコントロール */}
-      <div className="absolute top-2 left-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50">
-        <h4 className="font-bold mb-2 text-center">ズームレベル</h4>
-        <div className="flex space-x-2">
-          {zoomLabels.map((label, index) => (
-            <button
-              key={index}
-              onClick={() => changeZoomLevel(index)}
-              className={`px-2 py-1 rounded text-xs ${
-                zoomLevel === index
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-600 text-gray-300 hover:bg-gray-500"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="text-xs text-gray-300 mt-1 text-center">
-          現在: {zoomLevels[zoomLevel]}x
-        </div>
-      </div>
+      {/* 左側ナビゲーション */}
+      <GridLeftNav actionHistories={globalActionHistory} />
 
       {/* ゲームモード表示 */}
       <div className="absolute top-2 right-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50">
@@ -2289,23 +2140,6 @@ const GameGrid = () => {
             {gameMode === "setup" ? "動きの設定モード" : "ユニットの行動モード"}
           </h3>
           <p className="text-xs text-gray-300">ターン {currentTurn}</p>
-          {/* {enemyActions.length > 0 && gameMode === "action" && (
-            <p className="text-xs text-yellow-300 mt-1">
-              敵のアクション受信済み ({enemyActions.length}件)
-            </p>
-          )} */}
-        </div>
-      </div>
-
-      {/* 操作説明 */}
-      <div className="absolute bottom-2 left-2 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-xs z-50 max-w-xs">
-        <h4 className="font-bold mb-2">操作方法</h4>
-        <div className="space-y-1">
-          <div>• 左クリック: キャラクター選択・移動</div>
-          <div>• 右クリック + ドラッグ: 画面移動</div>
-          <div>• マウスホイール: 3段階ズーム切り替え</div>
-          <div>• ズームボタン: 縮小・普通・拡大 選択</div>
-          <div>• WASD または 矢印キー: カメラ移動</div>
         </div>
       </div>
 
@@ -2325,25 +2159,9 @@ const GameGrid = () => {
         className="w-full h-full border border-gray-300 rounded-lg overflow-hidden"
         style={{ maxWidth: "100vw", maxHeight: "100vh" }}
       />
-
-      {/* 行動履歴表示 */}
-      <ActionHistoryDisplay
-        selectedCharacterId={selectedCharacterId}
-        initialActionPoints={selectedCharacterActionPoints}
-      />
     </div>
   );
 };
-
-// 行動履歴のインターフェース
-interface ActionHistory {
-  id: string;
-  characterId: string;
-  position: { x: number; y: number };
-  mainTriggerAngle: number | null;
-  subTriggerAngle: number | null;
-  timestamp: number;
-}
 
 // グローバルな履歴配列
 let globalActionHistory: ActionHistory[] = [];
@@ -2365,9 +2183,6 @@ const executeActionsEmitter = new EventTarget();
 
 // 行動完了通知用のイベントエミッター
 const actionExecutionCompletedEmitter = new EventTarget();
-
-// ズーム変更通知用のイベントエミッター
-const zoomChangeEmitter = new EventTarget();
 
 // 履歴を追加する関数
 function addToGlobalHistory(history: ActionHistory) {
@@ -2392,115 +2207,5 @@ function notifyCharacterSelection(
     })
   );
 }
-
-// 履歴表示コンポーネント
-const ActionHistoryDisplay: React.FC<{
-  selectedCharacterId: string | null;
-  initialActionPoints: number;
-}> = ({ selectedCharacterId, initialActionPoints }) => {
-  const [histories, setHistories] = useState<ActionHistory[]>([]);
-  const [visible, setVisible] = useState(false);
-  const [actionPoints, setActionPoints] = useState<number>(0);
-
-  useEffect(() => {
-    const updateHistories = () => {
-      if (selectedCharacterId) {
-        const characterHistories = globalActionHistory.filter(
-          (h) => h.characterId === selectedCharacterId
-        );
-        setHistories(characterHistories);
-        setVisible(characterHistories.length > 0);
-      } else {
-        setVisible(false);
-      }
-    };
-
-    updateHistories();
-
-    const handleHistoryUpdate = () => {
-      updateHistories();
-    };
-
-    historyEventEmitter.addEventListener("historyUpdated", handleHistoryUpdate);
-    return () => {
-      historyEventEmitter.removeEventListener(
-        "historyUpdated",
-        handleHistoryUpdate
-      );
-    };
-  }, [selectedCharacterId]);
-
-  // 行動力の初期値を設定
-  useEffect(() => {
-    if (selectedCharacterId) {
-      // Phaser側から渡された現在の行動力を使用
-      setActionPoints(initialActionPoints);
-    } else {
-      setActionPoints(0);
-    }
-  }, [selectedCharacterId, initialActionPoints]);
-
-  // 行動力の変更を監視
-  useEffect(() => {
-    const handleActionPointsChange = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { characterId, remainingPoints } = customEvent.detail;
-
-      // 選択されたキャラクターの行動力変更の場合のみ更新
-      if (selectedCharacterId && characterId === selectedCharacterId) {
-        setActionPoints(remainingPoints);
-      }
-    };
-
-    actionPointsEmitter.addEventListener(
-      "actionPointsChanged",
-      handleActionPointsChange
-    );
-    return () => {
-      actionPointsEmitter.removeEventListener(
-        "actionPointsChanged",
-        handleActionPointsChange
-      );
-    };
-  }, [selectedCharacterId]);
-
-  if (!selectedCharacterId || (!visible && histories.length === 0)) return null;
-
-  return (
-    <div className="fixed top-2 left-60 bg-black bg-opacity-80 text-white p-2 rounded-lg shadow-lg text-sm z-50 max-w-sm">
-      <h3 className="font-bold mb-2 text-center">
-        行動履歴 - {selectedCharacterId}
-      </h3>
-      <h3 className="font-bold mb-2 text-center">
-        行動力残り - {actionPoints}
-      </h3>
-      <div className="max-h-40 overflow-y-auto">
-        {histories.slice(-5).map((history, index) => (
-          <div
-            key={index}
-            className="mb-2 p-2 bg-gray-700 bg-opacity-50 rounded text-xs"
-          >
-            <div className="text-blue-300">
-              位置: ({history.position.x}, {history.position.y})
-            </div>
-            {history.mainTriggerAngle !== null && (
-              <div className="text-red-300">
-                Main: {history.mainTriggerAngle.toFixed(2)}°
-              </div>
-            )}
-            {history.subTriggerAngle !== null && (
-              <div className="text-blue-300">
-                Sub: {history.subTriggerAngle.toFixed(2)}°
-              </div>
-            )}
-            <div className="text-gray-400 text-xs">
-              {new Date(history.timestamp).toLocaleTimeString()}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 export default GameGrid;
