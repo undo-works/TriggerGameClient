@@ -37,6 +37,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private triggerSettingMode: boolean = false; // トリガー設定モード
     private triggerSettingType: "main" | "sub" | null = null; // 設定中のトリガータイプ
     private triggerFan: Phaser.GameObjects.Graphics | null = null; // トリガー扇形の表示
+    private triggerPoints: Phaser.GameObjects.Graphics[] | null = null;
     private isDraggingTrigger: boolean = false; // トリガー扇形をドラッグ中かどうか
     private currentTriggerAngle: number = 0; // 現在のトリガー角度
 
@@ -294,7 +295,31 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // マウス移動イベント
       this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-        // カメラドラッグ中の処理
+        // ピンチ中かつ2本指がタッチされている場合
+        if (isPinching && this.input.pointer2 && this.input.pointer2.isDown) {
+          const pointer1 = this.input.activePointer;
+          const pointer2 = this.input.pointer2;
+
+          // 現在の2本指間の距離を計算
+          const currentDistance = this.calculateDistance(
+            pointer1.x,
+            pointer1.y,
+            pointer2.x,
+            pointer2.y
+          );
+
+          if (initialDistance > 0) {
+            // 距離の比率でズーム倍率を計算
+            const scale = currentDistance / initialDistance;
+            const newZoom = initialZoom * scale;
+
+            // ズーム適用（範囲制限付き）
+            const clampedZoom = Phaser.Math.Clamp(newZoom, 0.25, 3.0);
+            this.cameras.main.setZoom(clampedZoom);
+          }
+          return;
+        }
+        // 一本指でのカメラドラッグ中の処理
         if (!this.triggerFan && pointer.leftButtonDown()) {
           const deltaX = pointer.x - dragStartX;
           const deltaY = pointer.y - dragStartY;
@@ -363,7 +388,28 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         }
       });
 
+      let initialDistance = 0;
+      let isPinching = false;
+      let initialZoom = 1;
+
       this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        // 2本目の指がタッチされた場合
+        if (this.input.pointer2 && this.input.pointer2.isDown) {
+          const pointer1 = this.input.activePointer;
+          const pointer2 = this.input.pointer2;
+
+          // 2本指間の初期距離を計算
+          initialDistance = this.calculateDistance(
+            pointer1.x,
+            pointer1.y,
+            pointer2.x,
+            pointer2.y
+          );
+          isPinching = true;
+          initialZoom = this.cameras.main.zoom;
+          return;
+        }
+        // 一本指ならカメラドラッグ開始
         dragStartX = pointer.x;
         dragStartY = pointer.y;
         cameraStartX = this.cameras.main.scrollX;
@@ -382,6 +428,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // マウスクリックイベント
       this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+        // どちらかの指が離れたらピンチ終了
+        if (!this.input.pointer2 || !this.input.pointer2.isDown) {
+          isPinching = false;
+          initialDistance = 0;
+        }
         // カメラドラッグ終了
         if (isDraggingCamera) {
           isDraggingCamera = false;
@@ -488,6 +539,18 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           }
         }
       });
+    }
+
+    /** 2点間の距離を計算するヘルパー関数 */
+    private calculateDistance(
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number
+    ): number {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      return Math.sqrt(dx * dx + dy * dy);
     }
 
     /**
@@ -1137,6 +1200,15 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         range,
         triggerName
       );
+      // トリガー範囲ポイントも表示
+      this.triggerPoints = this.gameView.drawTriggerRangePoints(
+        this.characterManager.selectedCharacter.position.col,
+        this.characterManager.selectedCharacter.position.row,
+        this.currentTriggerAngle,
+        angle,
+        range,
+        color
+      );
     }
 
     /**
@@ -1172,6 +1244,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 既存の扇形を削除
       this.triggerFan.getData("label").destroy();
       this.triggerFan.destroy();
+      this.triggerPoints?.map((point) => point.destroy());
 
       // 新しい扇形を描画（移動後の位置を中心に）
       const angle = triggerStatus.angle;
@@ -1195,6 +1268,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         angle,
         range,
         triggerName
+      );
+
+      // トリガー範囲ポイントも更新
+      this.triggerPoints = this.gameView.drawTriggerRangePoints(
+        this.characterManager.selectedCharacter.position.col,
+        this.characterManager.selectedCharacter.position.row,
+        this.currentTriggerAngle,
+        angle,
+        range,
+        color
       );
     }
 
@@ -1403,6 +1486,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         this.triggerFan.getData("label").destroy();
         this.triggerFan.destroy();
         this.triggerFan = null;
+        this.triggerPoints?.map((point) => point.destroy());
+        this.triggerPoints = null;
       }
     }
 

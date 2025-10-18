@@ -99,7 +99,7 @@ export default function GridLeftNav({
       }`}
     >
       {/* メインナビゲーションバー */}
-      <div className="h-full bg-slate-900/50 backdrop-blur-sm border-gray-700 shadow-2xl overflow-hidden col-span-1">
+      <div className="h-full bg-slate-800 backdrop-blur-sm border-gray-700 shadow-2xl overflow-hidden col-span-1">
         {/* ナビゲーション項目 */}
         <div className="py-2 overflow-y-auto">
           {navItems.map((item) => (
@@ -109,8 +109,8 @@ export default function GridLeftNav({
               disabled={item.disabled}
               className={`w-full flex items-center text-white transition-all duration-200 relative justify-center ${
                 item.disabled
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:bg-white/10 active:bg-white/20"
+                  ? "opacity-70 cursor-not-allowed"
+                  : "hover:bg-white/10 active:bg-slate-800/70"
               }`}
               title={selectedIndex !== item.idx ? item.label : undefined}
             >
@@ -127,7 +127,7 @@ export default function GridLeftNav({
       {/* 右側コンテンツエリア */}
       {selectedIndex !== null && (
         <div
-          className="h-screen bg-slate-900/50 backdrop-blur-sm border-r border-gray-700 shadow-xl transition-all duration-300 ease-in-out col-span-5"
+          className="h-screen bg-slate-800/70 backdrop-blur-sm border-r border-gray-700 shadow-xl transition-all duration-300 ease-in-out col-span-5"
           style={{ animation: "slideInFromLeft 0.8s ease-out" }}
         >
           {/* ヘッダー */}
@@ -149,7 +149,10 @@ export default function GridLeftNav({
           </div>
 
           {/* コンテンツエリア */}
-          <div className="h-full overflow-y-scroll" style={{ maxHeight: `calc(100% - 48px)` }}>
+          <div
+            className="h-full overflow-y-scroll"
+            style={{ maxHeight: `calc(100% - 48px)` }}
+          >
             {navigationItems[selectedIndex].content || (
               <div className="p-4 text-gray-300">
                 {navigationItems[selectedIndex].label}

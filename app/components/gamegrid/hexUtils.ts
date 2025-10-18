@@ -316,27 +316,13 @@ export class HexUtils {
    * @param row1 開始点の行
    * @param col2 目標点の列
    * @param row2 目標点の行
-   * @returns 六角形グリッドでの距離
+   * @returns 六角形グリッドでの2点間のピクセル距離
    */
-  private calculateHexDistance(col1: number, row1: number, col2: number, row2: number): number {
-    // 六角形グリッドを立方体座標系に変換
-    const cube1 = this.offsetToCube(col1, row1);
-    const cube2 = this.offsetToCube(col2, row2);
-
-    // 立方体座標系での距離計算
-    return (Math.abs(cube1.x - cube2.x) + Math.abs(cube1.y - cube2.y) + Math.abs(cube1.z - cube2.z)) / 2;
-  }
-
-  /**
-   * オフセット座標（col, row）を立方体座標（x, y, z）に変換
-   * @param col 列
-   * @param row 行
-   * @returns 立方体座標
-   */
-  private offsetToCube(col: number, row: number): { x: number; y: number; z: number } {
-    const x = col;
-    const z = row - (col - (col & 1)) / 2;
-    const y = -x - z;
-    return { x, y, z };
+  calculateHexDistance(col1: number, row1: number, col2: number, row2: number): number {
+    const aPixel = this.getHexPosition(col1, row1);
+    const bPixel = this.getHexPosition(col2, row2);
+    const dx = bPixel.x - aPixel.x;
+    const dy = bPixel.y - aPixel.y;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 }

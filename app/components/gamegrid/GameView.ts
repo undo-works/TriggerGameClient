@@ -222,4 +222,87 @@ export class GameView {
 
     return triggerGraphics;
   }
+
+  /**
+   * トリガー範囲内のマスの中心に赤い点を表示する
+   * @param centerX - トリガー中心のX座標
+   * @param centerY - トリガー中心のY座標
+   * @param direction - トリガーの向き（度数法）
+   * @param triggerAngle - トリガーの角度
+   * @param triggerRange - トリガーの範囲
+   * @param pointColor - 赤い点の色（デフォルトは赤色0xff0000）
+   * @return 描画した点のGraphicsオブジェクトの配列
+   */
+  drawTriggerRangePoints(
+    centerCol: number,
+    centerRow: number,
+    direction: number,
+    triggerAngle: number,
+    triggerRange: number,
+    pointColor: number = 0xff0000
+  ) {
+    // 既存の赤い点を削除（もしあれば）
+    const existingPoints = this.scene.children.getChildren().filter(child =>
+      child.getData && child.getData('triggerRangePoint') === true
+    );
+    existingPoints.forEach(point => point.destroy());
+
+    const centerPos = this.hexUtils.getHexPosition(centerCol, centerRow);
+
+    const correctedDirection = direction - 90;
+
+    const points: Phaser.GameObjects.Graphics[] = [];
+
+    // トリガー範囲内のマスをチェック
+    for (let col = centerCol - triggerRange - 5; col <= centerCol + triggerRange + 5; col++) {
+      for (let row = centerRow - triggerRange - 5; row <= centerRow + triggerRange + 5; row++) {
+        // グリッド範囲内かチェック
+        if (col < 0 || col >= this.gridConfig.gridWidth ||
+          row < 0 || row >= this.gridConfig.gridHeight) {
+          continue;
+        }
+
+        // 中心からの距離をチェック
+        const distance = this.hexUtils.calculateHexDistance(centerCol, centerRow, col, row);
+        if (distance > this.gridConfig.hexHeight * (triggerRange + 0.5)) {
+          continue;
+        }
+
+        // マスの中心座標を取得
+        const hexPosition = this.hexUtils.getHexPosition(col, row);
+
+        // 中心からマスへの角度を計算
+        const angleToHex = Math.atan2(
+          hexPosition.y - centerPos.y,
+          hexPosition.x - centerPos.x
+        ) * (180 / Math.PI);
+
+        // 角度を0-360度の範囲に正規化
+        const normalizedAngleToHex = ((angleToHex + 360) % 360);
+        const normalizedDirection = ((correctedDirection + 360) % 360);
+
+        // トリガー角度の範囲内かチェック
+        const halfAngle = triggerAngle / 2;
+        let angleDiff = Math.abs(normalizedAngleToHex - normalizedDirection);
+
+        // 360度境界を跨ぐ場合の調整
+        if (angleDiff > 180) {
+          angleDiff = 360 - angleDiff;
+        }
+
+        if (angleDiff <= halfAngle) {
+          // 赤い点を描画
+          const point = this.scene.add.graphics();
+          point.fillStyle(pointColor, 0.6); // 指定された色、60%透明度
+          point.fillCircle(hexPosition.x, hexPosition.y, 6); // 半径6pxの円
+          point.setDepth(1); // トリガー扇形より前面に表示
+          point.setData('triggerRangePoint', true); // 識別用データ
+          points.push(point);
+        }
+      }
+    }
+    return points;
+  }
+
+
 }
