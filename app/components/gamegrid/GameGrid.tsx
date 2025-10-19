@@ -59,6 +59,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     // ユニット行動モード関連
     private isActionMode: boolean = false;
     private actionAnimationInProgress: boolean = false;
+    /** ユニット行動モード中のトリガー矢印の配列 */
+    private triggerArrows: Phaser.GameObjects.Graphics[] = [];
 
     /** グリッドの設定値 */
     private gridConfig: GridConfig = {
@@ -939,7 +941,19 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           subTriggerKey
         );
       }
+    }
 
+    /**
+     * 攻撃を受けた際の防御・回避の表示を行う
+     * @param stepChar - キャラクターのステップ結果
+     * @param playerId - プレイヤーのID
+     */
+    private defendTriggerDisplay(
+      stepChar: StepCharacterResult,
+      playerId: string
+    ) {
+      // 敵キャラクターかどうかを判定
+      const isEnemyCharacter = stepChar.playerId !== playerId;
       if (stepChar.guardCount > 0) {
         // 0より大きいHPの値を取得
         const validHpValues = [
@@ -1786,6 +1800,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             );
           }
         });
+      // 矢印の削除
+      this.triggerArrows.forEach((arrow) => arrow.destroy());
+      this.triggerArrows = [];
     }
 
     /**
@@ -1817,7 +1834,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         targets: character,
         x: targetPixelPos.x,
         y: targetPixelPos.y,
-        duration: 1000,
+        duration: 750,
         ease: "Power2",
         onUpdate: () => {
           if (this.isActionMode) {
@@ -1840,6 +1857,27 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           if (this.isActionMode) {
             this.showTriggerDirections(character);
           }
+
+          if (foundCharacter) {
+            // 攻撃元キャラクターから矢印を表示
+            for (const attackCharId of stepChar.attackerCharacterIds) {
+              // 攻撃元は敵味方を反転させてキャラクターIDから取得
+              const enemyCharacterState = isEnemy
+                ? this.findCharacterById(attackCharId)
+                : this.findEnemyCharacterById(attackCharId);
+              if (enemyCharacterState) {
+                const arrowGraphic =
+                  this.gameView.drawAnimatedArrowBetweenCharacters(
+                    enemyCharacterState.image,
+                    foundCharacter!.image
+                  );
+                this.triggerArrows.push(arrowGraphic);
+              }
+            }
+          }
+
+          // 防御トリガー表示
+          this.defendTriggerDisplay(stepChar, playerId);
 
           onComplete();
         },

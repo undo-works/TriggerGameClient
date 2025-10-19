@@ -113,6 +113,8 @@ export interface StepCharacterResult {
   guardCount: number;
   avoidCount: number;
   isDefeat: boolean;
+  /** 当キャラクターに攻撃したキャラクターのID配列 */
+  attackerCharacterIds: string[];
 }
 
 /** キャラクターのステータス */
