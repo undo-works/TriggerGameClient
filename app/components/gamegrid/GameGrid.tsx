@@ -110,6 +110,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
     private loadGameAssets() {
       // ゲーム関連のアセットを読み込み
+      this.load.image("gameBackground", "/game/field/field.svg");
       this.load.image(
         "shield_hexagon_blue",
         "/game/shields/shield_hexagon_blue.svg"
@@ -252,7 +253,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
           // 六角形を描画
           const hexagon = this.add.graphics();
-          hexagon.fillStyle(0xffffff, 1.0); // 白色
           hexagon.lineStyle(1, 0x000000, 0.3); // 黒色の境界線（線幅、色、透明度）
 
           const vertices = this.hexUtils.getHexVertices(pos.x, pos.y);
@@ -271,6 +271,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           this.gameView.writeTilePositionDirect(col, row);
         }
       }
+
+      // 建物などのフィールド画像を配置
+      this.gameView.createBackground();
     }
 
     /**
@@ -295,6 +298,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       let cameraStartY = 0;
       const DRAG_THRESHOLD = 10;
 
+      // ピンチジェスチャー用の変数
+      let initialDistance = 0;
+      let isPinching = false;
+      let initialZoom = 1;
+
       // マウス移動イベント
       this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
         // ピンチ中かつ2本指がタッチされている場合
@@ -303,7 +311,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           const pointer2 = this.input.pointer2;
 
           // 現在の2本指間の距離を計算
-          const currentDistance = this.calculateDistance(
+          const currentDistance = this.hexUtils.calculateDistance(
             pointer1.x,
             pointer1.y,
             pointer2.x,
@@ -390,10 +398,6 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         }
       });
 
-      let initialDistance = 0;
-      let isPinching = false;
-      let initialZoom = 1;
-
       this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
         // 2本目の指がタッチされた場合
         if (this.input.pointer2 && this.input.pointer2.isDown) {
@@ -401,7 +405,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           const pointer2 = this.input.pointer2;
 
           // 2本指間の初期距離を計算
-          initialDistance = this.calculateDistance(
+          initialDistance = this.hexUtils.calculateDistance(
             pointer1.x,
             pointer1.y,
             pointer2.x,
@@ -541,18 +545,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           }
         }
       });
-    }
-
-    /** 2点間の距離を計算するヘルパー関数 */
-    private calculateDistance(
-      x1: number,
-      y1: number,
-      x2: number,
-      y2: number
-    ): number {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      return Math.sqrt(dx * dx + dy * dy);
+      // ネイティブタッチイベントによるピンチジェスチャー強化
+      this.gameView.setupNativePinchGesture(this.cameras.main);
     }
 
     /**
