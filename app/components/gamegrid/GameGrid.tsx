@@ -10,7 +10,6 @@ import type {
   CombatStepResult,
   GridConfig,
   StepCharacterResult,
-  TurnCompleteResult,
 } from "./types";
 import { playerCharacterKeys, playerPositions } from "~/utils/CharacterConfig";
 import { CharacterManager } from "./characterManager";
@@ -19,6 +18,7 @@ import { PlayerCharacterState } from "~/entities/PlayerCharacterState";
 import { GameView } from "./GameView";
 import GridLeftNav from "../nav/GridLeftNav";
 import { ActionHistory } from "~/entities/ActionHistoryEntity";
+import { EnemyCharacterState } from "~/entities/EnemyCharacterState";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
@@ -102,6 +102,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      */
     private loadCharacterAssets() {
       // キャラクター画像を読み込み
+      this.load.image("UNKNOWN", "/character/UNKNOWN.svg");
       this.load.image("MIKUMO_OSAMU", "/character/MIKUMO_OSAMU.svg");
       this.load.image("KUGA_YUMA", "/character/KUGA_YUMA.svg");
       this.load.image("AMATORI_CHIKA", "/character/AMATORI_CHIKA.svg");
@@ -218,7 +219,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.initializeMargins(); // 余白を初期化
       this.setupCamera(); // カメラの設定を最初に行う
       this.initializeGameConfig(); // 六角形グリッドの設定値初期化
-      this.createBackgroundTiles(); // 背景タイルを配置
+      this.gameView.createBackground(); // 背景画像を配置
+      this.gameView.createBackgroundTiles(); // 背景タイルを配置
       this.createGrid(); // グリッドラインを描画
       this.createCharacters(); // キャラクターを配置
       this.createMouseInteraction(); // マウスイベントを設定
@@ -232,48 +234,16 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     private setupActionModeListeners() {
       const handleExecuteActions = (event: Event) => {
         const customEvent = event as CustomEvent;
-        const { turnCompleteResult, playerId } = customEvent.detail;
-        this.executeAllActions(turnCompleteResult, playerId);
+        const { turnCompleteResult, playerId, turnNumber } = customEvent.detail;
+        // すべてのキャラクターの行動力を非表示
+        this.characterManager.setAllActionPointsTextToNull();
+        this.executeAllActions(turnCompleteResult, playerId, turnNumber);
       };
 
       executeActionsEmitter.addEventListener(
         "executeAllActions",
         handleExecuteActions
       );
-    }
-
-    /**
-     * 背景タイルを六角形グリッドに敷き詰める
-     */
-    private createBackgroundTiles() {
-      // 各グリッドセルに六角形の背景を配置
-      for (let col = 0; col < this.gridConfig.gridWidth; col++) {
-        for (let row = 0; row < this.gridConfig.gridHeight; row++) {
-          const pos = this.hexUtils.getHexPosition(col, row);
-
-          // 六角形を描画
-          const hexagon = this.add.graphics();
-          hexagon.lineStyle(1, 0x000000, 0.3); // 黒色の境界線（線幅、色、透明度）
-
-          const vertices = this.hexUtils.getHexVertices(pos.x, pos.y);
-          hexagon.beginPath();
-          hexagon.moveTo(vertices[0], vertices[1]);
-          for (let i = 2; i < vertices.length; i += 2) {
-            hexagon.lineTo(vertices[i], vertices[i + 1]);
-          }
-          hexagon.closePath();
-          hexagon.fillPath();
-          hexagon.strokePath();
-
-          hexagon.setDepth(0); // 背景レイヤー
-
-          // 六角形の位置情報を書き込む
-          this.gameView.writeTilePositionDirect(col, row);
-        }
-      }
-
-      // 建物などのフィールド画像を配置
-      this.gameView.createBackground();
     }
 
     /**
@@ -531,6 +501,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
               this.moveCharacter(hexCoord.col, hexCoord.row);
               // 移動後にトリガー設定モードに入る
               this.startTriggerSetting();
+              console.log(
+                `キャラクターを移動: (${hexCoord.col}, ${hexCoord.row}, AP残り:${isMovable.remainActiveCount})`
+              );
               // 行動力を消費
               this.consumeActionPoint(isMovable.remainActiveCount);
             } else {
@@ -594,6 +567,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         );
         return;
       }
+
+      // 背景に座標の高さを表示する
+      this.gameView.changeTileText("buildingHeight");
 
       // 前回の移動可能マスを削除
       this.characterManager.movableHexes.forEach((hex) => hex.destroy());
@@ -701,6 +677,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 選択状態をリセット
       this.characterManager.selectedCharacter = null;
 
+      // 背景を通常表示に戻す
+      this.gameView.changeTileText("position");
+
       // React側にキャラクター選択解除を通知
       notifyCharacterSelection(null, 0);
     }
@@ -775,8 +754,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       const subTriggerStatus = TRIGGER_STATUS[subTriggerKey];
 
       // 敵キャラクターかどうかを判定
-      const isEnemyCharacter = this.characterManager.enemyCharacters.includes(
-        selectedCharacterState
+      const isEnemyCharacter = this.characterManager.enemyCharacters.some(
+        (enemy) => enemy === selectedCharacterState
       );
 
       // 敵の場合は角度に180度を加算
@@ -1072,18 +1051,20 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         // 初期行動力を設定
         const characterKey = characterId as keyof typeof CHARACTER_STATUS;
         const characterStatus = CHARACTER_STATUS[characterKey];
-        this.characterManager.playerCharacters.push(
-          new PlayerCharacterState(
-            character,
-            { col: pos.col, row: pos.row },
-            characterId,
-            { main: 0, sub: 0 },
-            null,
-            characterStatus.activeCount,
-            null,
-            this.hexUtils
-          )
+        const playerCharacterState = new PlayerCharacterState(
+          character,
+          { col: pos.col, row: pos.row },
+          characterId,
+          { main: 0, sub: 0 },
+          null,
+          characterStatus.activeCount,
+          null,
+          null,
+          this.hexUtils
         );
+
+        playerCharacterState.updateActionPointsDisplay(this);
+        this.characterManager.playerCharacters.push(playerCharacterState);
       });
 
       // 相手のキャラクター（上辺行）を配置
@@ -1102,11 +1083,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           invertedPos.row
         );
         const characterId = Object.keys(CHARACTER_STATUS)[index]; // キャラクターID: "MIKUMO_OSAMU", "KUGA_YUMA", "AMATORI_CHIKA", "HYUSE_KURONIN"
-        const character = this.add.image(
-          position.x,
-          position.y,
-          playerCharacterKeys[index]
-        );
+        const character = this.add.image(position.x, position.y, "UNKNOWN");
         character.setOrigin(0.5, 0.5);
         character.setDisplaySize(
           this.gridConfig.hexRadius * 1.2,
@@ -1114,19 +1091,19 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         ); // 六角形に合わせたサイズ
         character.setDepth(2); // 前面に表示
 
-        // 赤い色調を追加（相手のキャラクター識別用）
-        character.setTint(0xffb6c1); // 薄い赤色
-
         // 相手のキャラクターは上下反転
         character.setFlipY(true);
 
-        this.characterManager.enemyCharacters.push({
-          image: character,
-          id: characterId,
-          position: { col: invertedPos.col, row: invertedPos.row },
-          direction: { main: 180, sub: 180 },
-          triggerDisplay: null,
-        });
+        this.characterManager.enemyCharacters.push(
+          new EnemyCharacterState(
+            character,
+            { col: invertedPos.col, row: invertedPos.row },
+            characterId,
+            { main: 180, sub: 180 },
+            null,
+            this.gridConfig
+          )
+        );
       });
     }
 
@@ -1141,6 +1118,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // キャラクターを紫色で強調表示（トリガー設定モード）
       this.characterManager.selectedCharacter.image.setTint(0xff00ff);
+
+      // タイル上には座標を表示
+      this.gameView.changeTileText("position");
 
       // mainトリガーの設定を開始
       this.showTriggerFan();
@@ -1393,6 +1373,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         console.log(
           `キャラクター${this.characterManager.selectedCharacter?.id}の行動力を消費しました。残り: ${remainingMoves}`
         );
+
+        // 行動力表示の更新
+        this.characterManager.selectedCharacter.updateActionPointsDisplay(this);
 
         // React側に行動力の変更を通知
         actionPointsEmitter.dispatchEvent(
@@ -1676,10 +1659,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
      * @param turnNumber ターン番号
      */
     private executeAllActions(
-      turnCompleteResult: TurnCompleteResult,
-      playerId: string
+      turnCompleteResult: CombatStepResult[],
+      playerId: string,
+      turnNumber: number
     ) {
-      console.log(`ターン ${turnCompleteResult.turnNumber} の行動実行開始`);
+      console.log(`ターン ${turnNumber} の行動実行開始`);
       this.isActionMode = true;
       this.actionAnimationInProgress = true;
 
@@ -1700,26 +1684,22 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         this.showTriggerDirections(character.image);
       });
       // ステップベースの移動システムを使用
-      this.executeStepBasedActions(turnCompleteResult, playerId);
+      this.executeStepBasedActions(turnCompleteResult, playerId, turnNumber);
     }
 
     /**
      * ステップベースで全キャラクターの行動を実行
      */
     private executeStepBasedActions(
-      turnCompleteResult: TurnCompleteResult,
-      playerId: string
+      combatStepResults: CombatStepResult[],
+      playerId: string,
+      turnNumber: number
     ) {
-      console.log(
-        `ターン ${turnCompleteResult.turnNumber} 開始 - 総ステップ数: ${turnCompleteResult.totalSteps}`
-      );
-
       let currentStepIndex = 0;
 
       const executeNextStep = () => {
-        if (currentStepIndex < turnCompleteResult.allStepResults.length) {
-          const stepResult =
-            turnCompleteResult.allStepResults[currentStepIndex];
+        if (currentStepIndex < combatStepResults.length) {
+          const stepResult = combatStepResults[currentStepIndex];
           console.log(`ステップ ${stepResult.stepNumber} を実行中...`);
 
           this.executeActionStep(stepResult, playerId);
@@ -1742,7 +1722,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
           // 全ステップ完了
           console.log("全ステップが完了しました");
           this.time.delayedCall(500, () => {
-            this.completeActionPhase(turnCompleteResult.turnNumber);
+            this.completeActionPhase(turnNumber);
           });
         }
       };
@@ -1847,6 +1827,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
             foundCharacter.position = targetPosition;
           }
 
+          if (foundCharacter instanceof EnemyCharacterState) {
+            // 敵キャラクターの視認状態を更新
+            foundCharacter.setSeenByEnemy(stepChar.isSeenByEnemy);
+          }
+
           // トリガー表示を更新
           if (this.isActionMode) {
             this.showTriggerDirections(character);
@@ -1920,6 +1905,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
       // 行動履歴をクリア
       this.clearActionHistory();
+
+      // キャラクターの行動力を表示
+      this.characterManager.setAllActionPointsText(this);
 
       // React側に行動完了を通知
       actionExecutionCompletedEmitter.dispatchEvent(
@@ -2072,7 +2060,7 @@ const GameGrid = () => {
   useEffect(() => {
     const handleTurnResultSubmitted = (data: WebSocketMessage) => {
       if (data.type === "turn_result") {
-        console.log("敵側のアクションを受信:", data);
+        console.log("ターン戦闘結果のアクションを受信:", data);
         setCurrentTurn(data.turnNumber || 1);
         setGameMode("action");
 
@@ -2082,6 +2070,7 @@ const GameGrid = () => {
             detail: {
               turnCompleteResult: data.result,
               playerId: playerId,
+              turnNumber: data.turnNumber,
             },
           })
         );

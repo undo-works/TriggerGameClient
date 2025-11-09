@@ -11,6 +11,8 @@ export class PlayerCharacterState extends CharacterImageState {
     triggerDisplay: TriggerDisplay | null,
     /** 残りの行動力 */
     public actionPoints: number,
+    /** 残りの行動力表示 */
+    private actionPointsText: Phaser.GameObjects.Text | null,
     /** 行動設定完了表示 */
     public completeText: Phaser.GameObjects.Text | null,
     /** 座標計算系クラス */
@@ -23,6 +25,18 @@ export class PlayerCharacterState extends CharacterImageState {
       direction,
       triggerDisplay
     );
+  }
+
+  /** 行動力表示を更新または削除する
+   * @param points 新しい行動力、nullの場合は表示を削除
+   */
+  setActionPointsText(points: number | null) {
+    if (points === null) {
+      this.actionPointsText?.destroy();
+      this.actionPointsText = null;
+    } else {
+      this.actionPoints = points;
+    }
   }
 
   /**
@@ -91,5 +105,40 @@ export class PlayerCharacterState extends CharacterImageState {
     text.setDepth(3); // キャラクターより前面
 
     this.completeText = text;
+  }
+
+  /**
+   * キャラクター左下の行動力表示を更新する
+   */
+  updateActionPointsDisplay(scene: Phaser.Scene) {
+    const pixelPos = this.hexUtils.getHexPosition(
+      this.position.col,
+      this.position.row
+    );
+
+    // 既存のテキストがあれば削除
+    const existingText = this.actionPointsText;
+    if (existingText) {
+      existingText.destroy();
+    }
+
+    // 新しいテキストを作成
+    const text = scene.add.text(pixelPos.x - 12, pixelPos.y + 20, `${this.actionPoints}`, {
+      fontSize: "12px",
+      color: "#ffffff",
+      fontStyle: "bold",
+      backgroundColor: "#1e293b",
+      padding: { x: 2, y: 0 },
+      shadow: {
+        offsetX: 2,
+        offsetY: 2,
+        color: "#000000",
+        blur: 4,
+        fill: true
+      }
+    });
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(3); // キャラクターより前面
+    this.actionPointsText = text;
   }
 }

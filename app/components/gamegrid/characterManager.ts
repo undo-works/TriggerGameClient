@@ -35,7 +35,7 @@ export class CharacterManager {
    */
   findCharacterByImage(
     characterImage: Phaser.GameObjects.Image
-  ): CharacterImageState | null {
+  ): PlayerCharacterState | EnemyCharacterState | null {
     for (const character of [...this.playerCharacters, ...this.enemyCharacters]) {
       if (character.image === characterImage) {
         return character;
@@ -53,6 +53,22 @@ export class CharacterManager {
     characterImage: Phaser.GameObjects.Image
   ): PlayerCharacterState | null {
     for (const character of this.playerCharacters) {
+      if (character.image === characterImage) {
+        return character;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Phaserのキャラクターオブジェクトでエネミー側キャラクターを検索
+   * @param characterImage Phaserのキャラクターオブジェクト
+   * @return 見つかったEnemyCharacterStateオブジェクト、見つからなかった場合はnull
+   */
+  findEnemyCharacterByImage(
+    characterImage: Phaser.GameObjects.Image
+  ): EnemyCharacterState | null {
+    for (const character of this.enemyCharacters) {
       if (character.image === characterImage) {
         return character;
       }
@@ -85,11 +101,11 @@ export class CharacterManager {
 
 
   /**
- * 指定された位置にキャラクターがいるかチェックする
- * @param col 列
- * @param row 行
- * @returns キャラクターがいる場合はtrue、いない場合はfalse
- */
+   * 指定された位置にキャラクターがいるかチェックする
+   * @param col 列
+   * @param row 行
+   * @returns キャラクターがいる場合はtrue、いない場合はfalse
+   */
   isCharacterAt(
     col: number,
     row: number
@@ -105,6 +121,31 @@ export class CharacterManager {
     }
     return false;
   }
+
+  ///////////////////////////////////////
+  // 行動力表示関連
+  //////////////////////////////////////
+
+  /**
+   * すべてのキャラクターの行動力表示を削除する
+   */
+  setAllActionPointsTextToNull = () => {
+    this.playerCharacters.forEach(character => {
+      character.setActionPointsText(null);
+    });
+  }
+
+  /**
+   * すべてのキャラクターの行動力表示を更新する
+   * @param scene - Phaserのシーン
+   */
+  setAllActionPointsText = (scene: Phaser.Scene) => {
+    this.playerCharacters.forEach(character => {
+      character.updateActionPointsDisplay(scene);
+    });
+  }
+
+
 
   /**
    * キャラクターを破棄する

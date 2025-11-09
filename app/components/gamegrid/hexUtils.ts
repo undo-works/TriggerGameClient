@@ -1,5 +1,6 @@
 import { Position } from '~/types';
 import { GridConfig } from './types';
+import { FIELD_STEPS } from '~/constants/FieldData';
 
 /**
  * 六角形グリッド関連のユーティリティ関数
@@ -185,12 +186,16 @@ export class HexUtils {
 
         for (const neighbor of neighbors) {
           const key = `${neighbor.col},${neighbor.row}`;
-          const newRemainingMoves = remainingMoves - 1;
+          const beforeBuildingHeight = FIELD_STEPS[position.row][position.col]; // 現在のマスの建物の高さを取得
+          const afterBuildingHeight = FIELD_STEPS[neighbor.row][neighbor.col]; // 建物の高さを取得
+          const moveHeightDiff = Math.max(0, afterBuildingHeight - beforeBuildingHeight); // 高さの差分を計算
+          const newRemainingMoves = remainingMoves - (moveHeightDiff + 1); // 移動コストを計算
 
           // まだ訪問していないマス、またはより多くの行動力で到達できる場合
           if (
-            !reachableHexes.has(key) ||
-            reachableHexes.get(key)! < newRemainingMoves
+            (!reachableHexes.has(key) ||
+              reachableHexes.get(key)! < newRemainingMoves) &&
+            newRemainingMoves >= 0
           ) {
             reachableHexes.set(key, newRemainingMoves);
             queue.push({
@@ -204,19 +209,13 @@ export class HexUtils {
 
     // 開始位置を除いて結果を返す
     const result: { col: number; row: number; remainActiveCount: number }[] = [];
-    for (const [key] of reachableHexes.entries()) {
+    for (const [key, value] of reachableHexes) {
       const [c, r] = key.split(",").map(Number);
-      if (c !== col || r !== row) {
-        const shortestPath = this.findPath({ col, row }, { col: c, row: r });
-        const actualCost = shortestPath.length;
-        const actualRemaining = activeCount - actualCost;
-
         result.push({
           col: c,
           row: r,
-          remainActiveCount: Math.max(0, actualRemaining)
+          remainActiveCount: Math.max(0, value)
         });
-      }
     }
     return result;
   }

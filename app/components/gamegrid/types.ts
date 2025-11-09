@@ -88,14 +88,14 @@ export interface TriggerArea {
 /** ターンごとの戦闘結果レスポンス型定義 */
 export interface TurnCompleteResult {
   turnNumber: number;
-  totalSteps: number;
-  allStepResults: CombatStepResult[];
+  result: CombatStepResult[];
   timestamp: string; // ISO 8601
 }
 
 /** ステップごとの実行結果 */
 export interface CombatStepResult {
   stepNumber: number;
+  fieldView: boolean[][];
   stepCharacterResult: StepCharacterResult[];
   winnerId: string | null;
 }
@@ -115,6 +115,8 @@ export interface StepCharacterResult {
   isDefeat: boolean;
   /** 当キャラクターに攻撃したキャラクターのID配列 */
   attackerCharacterIds: string[];
+  /** 敵のプレイヤーに視認されているか */
+  isSeenByEnemy: boolean;
 }
 
 /** キャラクターのステータス */
