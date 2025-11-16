@@ -85,6 +85,11 @@ export interface TriggerArea {
   angle: number;
 }
 
+/** マッチ成立後のフィールド情報型定義 */
+export interface MatchmakingResult {
+  fieldView: boolean[][];
+}
+
 /** ターンごとの戦闘結果レスポンス型定義 */
 export interface TurnCompleteResult {
   turnNumber: number;

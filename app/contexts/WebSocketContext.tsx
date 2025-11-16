@@ -6,7 +6,10 @@ import React, {
   useState,
   ReactNode,
 } from "react";
-import { TurnCompleteResult } from "~/components/gamegrid/types";
+import {
+  MatchmakingResult,
+  TurnCompleteResult,
+} from "~/components/gamegrid/types";
 import { NegotiateError, NegotiateResponse } from "~/routes/api/negotiate";
 import axios from "axios";
 
@@ -49,7 +52,7 @@ export interface WebSocketMessage {
   opponentPlayerId?: string; // opponent_cancelled_match用
   turnNumber?: number;
   timestamp?: string;
-  result?: TurnCompleteResult;
+  result?: TurnCompleteResult | MatchmakingResult;
   /** マッチング開始時のキャラクター情報 */
   characters?: string[];
   gameState?: Record<string, unknown>;
@@ -93,6 +96,8 @@ interface WebSocketContextType {
   playerId: string | null;
   matchId: string | null;
   setMatchId: (matchId: string | null) => void;
+  fieldView: boolean[][] | null;
+  setFieldView: (fieldView: boolean[][] | null) => void;
 
   // 接続制御
   connect: () => void;
@@ -116,6 +121,9 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
   );
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [matchId, setMatchId] = useState<string | null>(null);
+
+  // フィールドビュー情報
+  const [fieldView, setFieldView] = useState<boolean[][] | null>(null);
 
   // メッセージリスナーを管理
   const messageListeners = useRef<
@@ -380,6 +388,8 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({
     playerId,
     matchId,
     setMatchId,
+    fieldView,
+    setFieldView,
     connect,
     disconnect,
   };

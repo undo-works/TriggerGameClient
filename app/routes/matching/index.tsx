@@ -3,6 +3,7 @@ import type { MetaFunction } from '@remix-run/node';
 import { useNavigate } from '@remix-run/react';
 import { useWebSocket, type WebSocketMessage } from '../../contexts/WebSocketContext';
 import { playerCharacterKeys } from "~/utils/CharacterConfig";
+import { MatchmakingResult } from "~/components/gamegrid/types";
 
 export const meta: MetaFunction = () => {
   return [
@@ -32,6 +33,7 @@ export default function MatchingPage() {
     removeMessageListener,
     playerId,
     matchId,
+    setFieldView,
     connect,
   } = useWebSocket();
 
@@ -90,6 +92,15 @@ export default function MatchingPage() {
           playerCount: 2,
           message: "マッチが成立しました！ゲームを開始します...",
         });
+
+        if (
+          data.result &&
+          typeof data.result === "object" &&
+          "fieldView" in data.result
+        ) {
+          // フィールドビュー情報を設定
+          setFieldView((data.result as MatchmakingResult).fieldView);
+        }
 
         // 3秒後にゲーム画面に遷移
         setTimeout(() => {

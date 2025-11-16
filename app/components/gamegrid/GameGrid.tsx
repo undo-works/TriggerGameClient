@@ -19,12 +19,16 @@ import { GameView } from "./GameView";
 import GridLeftNav from "../nav/GridLeftNav";
 import { ActionHistory } from "~/entities/ActionHistoryEntity";
 import { EnemyCharacterState } from "~/entities/EnemyCharacterState";
+import { FieldViewState } from "~/entities/FieldViewState";
 
 /**
  * Phaserゲームシーンを動的に作成するファクトリ関数
  * SSR対応のため、Phaserオブジェクトを引数として受け取る
  */
-const createGridScene = (Phaser: typeof import("phaser")) => {
+const createGridScene = (
+  Phaser: typeof import("phaser"),
+  fieldView: boolean[][] | null
+) => {
   return class GridScene extends Phaser.Scene {
     // Phaserオブジェクト
     private hoveredCell: { x: number; y: number } | null = null; // マウスでホバーしているセル
@@ -32,6 +36,9 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
 
     /** キャラクター管理 */
     private characterManager: CharacterManager = new CharacterManager();
+
+    /** フィールドビューの状態管理 */
+    private fieldViewState!: FieldViewState;
 
     // トリガー設定フェーズ
     private triggerSettingMode: boolean = false; // トリガー設定モード
@@ -209,6 +216,11 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
     initializeGameConfig() {
       this.hexUtils = new HexUtils(this.gridConfig);
       this.gameView = new GameView(this, this.gridConfig);
+      this.fieldViewState = new FieldViewState(
+        this.hexUtils,
+        this,
+        this.gridConfig
+      );
     }
 
     /**
@@ -219,8 +231,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.initializeMargins(); // 余白を初期化
       this.setupCamera(); // カメラの設定を最初に行う
       this.initializeGameConfig(); // 六角形グリッドの設定値初期化
-      this.gameView.createBackground(); // 背景画像を配置
-      this.gameView.createBackgroundTiles(); // 背景タイルを配置
+      this.setupMatchmakingListeners(); // マッチ決定後のイベントリスナーを設定
       this.createGrid(); // グリッドラインを描画
       this.createCharacters(); // キャラクターを配置
       this.createMouseInteraction(); // マウスイベントを設定
@@ -244,6 +255,15 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
         "executeAllActions",
         handleExecuteActions
       );
+    }
+
+    /**
+     * マッチ決定後のイベントリスナーを設定
+     */
+    private setupMatchmakingListeners() {
+      if (fieldView) {
+        this.fieldViewState.setSightAreaFieldView(fieldView!);
+      }
     }
 
     /**
@@ -569,7 +589,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       }
 
       // 背景に座標の高さを表示する
-      this.gameView.changeTileText("buildingHeight");
+      this.fieldViewState.changeTileText("buildingHeight");
 
       // 前回の移動可能マスを削除
       this.characterManager.movableHexes.forEach((hex) => hex.destroy());
@@ -678,7 +698,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.characterManager.selectedCharacter = null;
 
       // 背景を通常表示に戻す
-      this.gameView.changeTileText("position");
+      this.fieldViewState.changeTileText("position");
 
       // React側にキャラクター選択解除を通知
       notifyCharacterSelection(null, 0);
@@ -1120,7 +1140,7 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       this.characterManager.selectedCharacter.image.setTint(0xff00ff);
 
       // タイル上には座標を表示
-      this.gameView.changeTileText("position");
+      this.fieldViewState.changeTileText("position");
 
       // mainトリガーの設定を開始
       this.showTriggerFan();
@@ -1777,6 +1797,8 @@ const createGridScene = (Phaser: typeof import("phaser")) => {
       // 矢印の削除
       this.triggerArrows.forEach((arrow) => arrow.destroy());
       this.triggerArrows = [];
+      // 視界情報の更新
+      this.fieldViewState.setSightAreaFieldView(stepResult.fieldView);
     }
 
     /**
@@ -1991,6 +2013,7 @@ const GameGrid = () => {
     playerId,
     matchId,
     setMatchId: setContextMatchId,
+    fieldView,
     connect,
   } = useWebSocket();
 
@@ -2009,6 +2032,17 @@ const GameGrid = () => {
       connect();
     }
   }, [readyState, connect, setContextMatchId]);
+
+  // マッチング結果をPhaser側に通知
+  useEffect(() => {
+    executeActionsEmitter.dispatchEvent(
+      new CustomEvent("matchmaking_result", {
+        detail: {
+          fieldView: fieldView,
+        },
+      })
+    );
+  }, [fieldView]);
 
   // 全行動完了イベントを監視してWebSocketで送信
   useEffect(() => {
@@ -2193,7 +2227,7 @@ const GameGrid = () => {
         const Phaser = await import("phaser");
 
         // GridSceneクラスを作成（Phaserオブジェクトを渡す）
-        const GridScene = createGridScene(Phaser);
+        const GridScene = createGridScene(Phaser, fieldView);
 
         // Phaserゲームの設定（画面サイズに合わせて調整）
         const config: Phaser.Types.Core.GameConfig = {

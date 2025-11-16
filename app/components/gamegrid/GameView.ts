@@ -2,16 +2,13 @@ import { CharacterImageState } from "~/entities/CharacterImageState";
 import { HexUtils } from "./hexUtils";
 import { GridConfig } from "./types";
 import { Position } from "~/types";
-import { FIELD_STEPS } from "~/constants/FieldData";
 
 export class GameView {
-
 
   private hexUtils: HexUtils;
   constructor(private scene: Phaser.Scene, private gridConfig: GridConfig) {
     this.hexUtils = new HexUtils(gridConfig);
   }
-
 
   /**
    * ネイティブタッチイベントによるピンチジェスチャー設定
@@ -266,126 +263,6 @@ export class GameView {
       },
     });
   }
-
-  ///////////////////////////////////////////////////////
-  // マス上の表示
-  ////////////////////////////////////////////////////////
-
-  /**
-   * 背景画像を作成・配置する
-   */
-  createBackground() {
-    const position = this.hexUtils.getHexPosition(
-      0,
-      0
-    );
-
-    // 背景画像を追加
-    const background = this.scene.add.image(position.x - this.gridConfig.hexWidth / 2, position.y - this.gridConfig.hexHeight / 2, "gameBackground");
-    background.setOrigin(0, 0); // 左上角を基準点に設定
-    background.setDepth(0.2);
-    background.setAlpha(0.7);
-  }
-
-  /** タイルの位置情報テキスト */
-  private tilePositionTexts: Phaser.GameObjects.Text[] = [];
-
-  /**
-   * 背景タイルを六角形グリッドに敷き詰める
-   */
-  createBackgroundTiles() {
-    // 各グリッドセルに六角形の背景を配置
-    for (let col = 0; col < this.gridConfig.gridWidth; col++) {
-      for (let row = 0; row < this.gridConfig.gridHeight; row++) {
-        const pos = this.hexUtils.getHexPosition(col, row);
-
-        // 六角形を描画
-        const hexagon = this.scene.add.graphics();
-        hexagon.lineStyle(1, 0x000000, 0.3); // 黒色の境界線（線幅、色、透明度）
-
-        const vertices = this.hexUtils.getHexVertices(pos.x, pos.y);
-        hexagon.beginPath();
-        hexagon.moveTo(vertices[0], vertices[1]);
-        for (let i = 2; i < vertices.length; i += 2) {
-          hexagon.lineTo(vertices[i], vertices[i + 1]);
-        }
-        hexagon.closePath();
-        hexagon.fillPath();
-        hexagon.strokePath();
-
-        hexagon.setDepth(0); // 背景レイヤー
-
-        // 六角形の位置情報を書き込む
-        this.writeTilePositionDirect(col, row);
-      }
-    }
-  }
-
-  /**
-   * タイル上に表示するテキストを更新する
-   * @param {"position" | "buildingHeight"} tileType - 表示するテキストの種類
-   */
-  changeTileText = (tileType: "position" | "buildingHeight") => {
-    // 既存のテキストを削除
-    this.tilePositionTexts.forEach((text) => text.destroy());
-    this.tilePositionTexts = [];
-    // 新しいテキストを作成
-    for (let col = 0; col < this.gridConfig.gridWidth; col++) {
-      for (let row = 0; row < this.gridConfig.gridHeight; row++) {
-        if (tileType === "position") {
-          this.writeTilePositionDirect(col, row);
-        } else if (tileType === "buildingHeight") {
-          this.writeTileBuildingHeight(col, row);
-        }
-      }
-    }
-  }
-  /**
-   * 六角形のタイルごとに位置情報を書き込む
-   * @param col - タイルの列番号
-   * @param row - タイルの行番号 
-   * @todo: ある程度開発が進んだら不要になるかも
-   */
-  private writeTilePositionDirect = (col: number, row: number) => {
-    const pos = this.hexUtils.getHexPosition(col, row);
-    const coordText = `${col},${row}`;
-
-    const positionText = this.scene.add.text(pos.x, pos.y, coordText, {
-      fontSize: "9px",
-      color: "#000",
-      fontFamily: "monospace",
-      backgroundColor: "rgba(255, 255, 255, 0.7)",
-      padding: { x: 2, y: 1 },
-    });
-
-    positionText.setOrigin(0.5, 0.5);
-    positionText.setDepth(0.1);
-    this.tilePositionTexts.push(positionText);
-  };
-
-  /**
-   * 六角形のタイルごとに建物の高さを書き込む
-   * @param col - タイルの列番号
-   * @param row - タイルの行番号
-   */
-  private writeTileBuildingHeight = (col: number, row: number) => {
-    const pos = this.hexUtils.getHexPosition(col, row);
-    const buildingHeight = FIELD_STEPS[row][col];
-    if (buildingHeight !== 0) {
-      // 建物の高さが0でない場合のみ表示
-      const positionText = this.scene.add.text(pos.x, pos.y, buildingHeight.toString(), {
-        fontSize: "9px",
-        color: "#000",
-        fontFamily: "monospace",
-        padding: { x: 2, y: 1 },
-      });
-
-      positionText.setOrigin(0.5, 0.5);
-      positionText.setDepth(2);
-      this.tilePositionTexts.push(positionText);
-    }
-  };
-
 
   /**
    * トリガー扇形の表示を作成する
